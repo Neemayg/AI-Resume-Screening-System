@@ -1,0 +1,140 @@
+{
+  "programming_languages": {
+    "skills": [
+      "python", "java", "javascript", "typescript", "c++", "c#", "c", 
+      "ruby", "go", "golang", "rust", "php", "swift", "kotlin", "scala",
+      "r", "matlab", "perl", "haskell", "lua", "dart", "objective-c"
+    ],
+    "weight": 1.2,
+    "category": "technical"
+  },
+  "frontend_frameworks": {
+    "skills": [
+      "react", "reactjs", "react.js", "angular", "angularjs", "vue", "vuejs", "vue.js",
+      "svelte", "next.js", "nextjs", "nuxt.js", "gatsby", "ember", "backbone",
+      "jquery", "bootstrap", "tailwind", "tailwindcss", "material-ui", "chakra-ui",
+      "styled-components", "sass", "scss", "less", "webpack", "vite", "parcel"
+    ],
+    "weight": 1.1,
+    "category": "technical"
+  },
+  "backend_frameworks": {
+    "skills": [
+      "node.js", "nodejs", "express", "expressjs", "django", "flask", "fastapi",
+      "spring", "spring boot", "springboot", "rails", "ruby on rails", "laravel",
+      "asp.net", ".net", "dotnet", "gin", "echo", "fiber", "nestjs", "koa",
+      "graphql", "rest", "restful", "grpc", "websocket"
+    ],
+    "weight": 1.1,
+    "category": "technical"
+  },
+  "databases": {
+    "skills": [
+      "sql", "mysql", "postgresql", "postgres", "mongodb", "nosql", "redis",
+      "elasticsearch", "cassandra", "dynamodb", "firebase", "sqlite", "oracle",
+      "mariadb", "couchdb", "neo4j", "graphql", "prisma", "sequelize", "mongoose",
+      "sqlalchemy", "hibernate"
+    ],
+    "weight": 1.0,
+    "category": "technical"
+  },
+  "cloud_platforms": {
+    "skills": [
+      "aws", "amazon web services", "azure", "microsoft azure", "gcp", 
+      "google cloud", "google cloud platform", "heroku", "digitalocean",
+      "vercel", "netlify", "cloudflare", "alibaba cloud", "ibm cloud",
+      "ec2", "s3", "lambda", "rds", "cloudfront", "route53", "ecs", "eks"
+    ],
+    "weight": 1.1,
+    "category": "technical"
+  },
+  "devops_tools": {
+    "skills": [
+      "docker", "kubernetes", "k8s", "jenkins", "gitlab ci", "github actions",
+      "circleci", "travis ci", "ansible", "terraform", "puppet", "chef",
+      "vagrant", "prometheus", "grafana", "elk", "elasticsearch", "logstash",
+      "kibana", "nagios", "datadog", "splunk", "nginx", "apache", "haproxy"
+    ],
+    "weight": 1.0,
+    "category": "technical"
+  },
+  "data_science_ml": {
+    "skills": [
+      "machine learning", "deep learning", "neural networks", "tensorflow",
+      "pytorch", "keras", "scikit-learn", "sklearn", "pandas", "numpy",
+      "matplotlib", "seaborn", "plotly", "jupyter", "nlp", "natural language processing",
+      "computer vision", "opencv", "cnn", "rnn", "lstm", "transformer", "bert",
+      "gpt", "regression", "classification", "clustering", "xgboost", "lightgbm",
+      "random forest", "svm", "pca", "feature engineering", "model training",
+      "hyperparameter tuning", "mlops", "mlflow", "kubeflow", "airflow"
+    ],
+    "weight": 1.3,
+    "category": "technical"
+  },
+  "version_control": {
+    "skills": [
+      "git", "github", "gitlab", "bitbucket", "svn", "subversion", "mercurial",
+      "version control", "branching", "merging", "pull request", "code review"
+    ],
+    "weight": 0.8,
+    "category": "technical"
+  },
+  "testing": {
+    "skills": [
+      "unit testing", "integration testing", "e2e testing", "end-to-end testing",
+      "jest", "mocha", "chai", "pytest", "junit", "selenium", "cypress",
+      "playwright", "puppeteer", "testing library", "enzyme", "tdd", "bdd",
+      "test driven development", "qa", "quality assurance", "automation testing"
+    ],
+    "weight": 0.9,
+    "category": "technical"
+  },
+  "mobile_development": {
+    "skills": [
+      "react native", "flutter", "ios", "android", "swift", "kotlin",
+      "xamarin", "ionic", "cordova", "phonegap", "expo", "mobile development",
+      "app development", "xcode", "android studio"
+    ],
+    "weight": 1.0,
+    "category": "technical"
+  },
+  "soft_skills": {
+    "skills": [
+      "communication", "teamwork", "leadership", "problem solving", "problem-solving",
+      "critical thinking", "creativity", "adaptability", "time management",
+      "collaboration", "presentation", "negotiation", "conflict resolution",
+      "mentoring", "coaching", "decision making", "strategic thinking",
+      "analytical skills", "attention to detail", "multitasking", "flexibility"
+    ],
+    "weight": 0.7,
+    "category": "soft"
+  },
+  "project_management": {
+    "skills": [
+      "agile", "scrum", "kanban", "waterfall", "jira", "confluence", "trello",
+      "asana", "monday.com", "project management", "sprint planning", "backlog",
+      "user stories", "sprint", "standup", "retrospective", "roadmap",
+      "stakeholder management", "risk management", "resource planning"
+    ],
+    "weight": 0.8,
+    "category": "management"
+  },
+  "certifications": {
+    "skills": [
+      "aws certified", "azure certified", "gcp certified", "pmp", "scrum master",
+      "csm", "comptia", "cissp", "ceh", "ccna", "ccnp", "oracle certified",
+      "microsoft certified", "google certified", "kubernetes certified", "ckad", "cka"
+    ],
+    "weight": 0.9,
+    "category": "certification"
+  },
+  "industry_domains": {
+    "skills": [
+      "fintech", "healthcare", "e-commerce", "ecommerce", "edtech", "saas",
+      "b2b", "b2c", "startup", "enterprise", "banking", "insurance",
+      "retail", "logistics", "manufacturing", "telecom", "media", "gaming"
+    ],
+    "weight": 0.6,
+    "category": "domain"
+  }
+}

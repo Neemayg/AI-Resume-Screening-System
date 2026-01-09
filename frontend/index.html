@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Resume Screening System</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- React -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  
+  <style>
+    /* Custom animations */
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    @keyframes slideInFromBottom {
+      from { 
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    @keyframes slideInFromLeft {
+      from { 
+        opacity: 0;
+        transform: translateX(-10px);
+      }
+      to { 
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    
+    .animate-fade-in {
+      animation: fadeIn 0.3s ease-out forwards;
+    }
+    
+    .animate-slide-in-bottom {
+      animation: slideInFromBottom 0.4s ease-out forwards;
+    }
+    
+    .animate-slide-in-left {
+      animation: slideInFromLeft 0.3s ease-out forwards;
+    }
+    
+    .animate-spin {
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // --- Icon Components using Lucide ---
+    const Icon = ({ name, size = 24, className = "" }) => {
+      const iconRef = React.useRef(null);
+      
+      useEffect(() => {
+        if (iconRef.current && lucide && lucide.icons[name]) {
+          iconRef.current.innerHTML = '';
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('width', size);
+          svg.setAttribute('height', size);
+          svg.setAttribute('viewBox', '0 0 24 24');
+          svg.setAttribute('fill', 'none');
+          svg.setAttribute('stroke', 'currentColor');
+          svg.setAttribute('stroke-width', '2');
+          svg.setAttribute('stroke-linecap', 'round');
+          svg.setAttribute('stroke-linejoin', 'round');
+          svg.innerHTML = lucide.icons[name][2];
+          iconRef.current.appendChild(svg);
+        }
+      }, [name, size]);
+      
+      return <span ref={iconRef} className={`inline-flex items-center justify-center ${className}`} />;
+    };
+    // --- Backend API Base URL ---
+const API_BASE = "http://localhost:8000";
+
+// --- Backend API Calls ---
+async function uploadJDText(jdText) {
+  const res = await fetch(`${API_BASE}/upload-jd-text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: jdText })
+  });
+  if (!res.ok) throw new Error("JD upload failed");
+}
+
+async function uploadResumes(files) {
+  const formData = new FormData();
+  files.forEach(file => formData.append("files", file));
+
+  const res = await fetch(`${API_BASE}/upload-resumes`, {
+    method: "POST",
+    body: formData
+  });
+  if (!res.ok) throw new Error("Resume upload failed");
+}
+
+async function analyzeResumes() {
+  const res = await fetch(`${API_BASE}/analyze`, { method: "POST" });
+  if (!res.ok) throw new Error("Analysis failed");
+}
+
+async function fetchResults() {
+  const res = await fetch(`${API_BASE}/results`);
+  if (!res.ok) throw new Error("Fetching results failed");
+  return await res.json();
+}
+
+    // --- Mock Data & Constants ---
+    const MAX_RESUMES = 5;
+
+    const MOCK_SKILLS = [
+      "React", "Node.js", "Python", "AWS", "UI/UX Design", "Machine Learning", 
+      "Agile", "SQL", "TypeScript", "Docker", "Kubernetes", "Project Management"
+    ];
+
+    // --- Sub-Components ---
+
+    /**
+     * Theme Toggle Component
+     */
+    const ThemeToggle = ({ theme, toggle }) => (
+      <button
+        onClick={toggle}
+        className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:ring-2 hover:ring-indigo-400 transition-all"
+        aria-label="Toggle Theme"
+      >
+        {theme === 'light' ? <Icon name="moon" size={20} /> : <Icon name="sun" size={20} />}
+      </button>
+    );
+
+    /**
+     * Progress Bar Component
+     */
+    const ProgressBar = ({ progress, color = "bg-indigo-600" }) => (
+      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+        <div 
+          className={`h-full ${color} transition-all duration-1000 ease-out`} 
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    );
+
+    /**
+     * Main Application Component
+     */
+    function App() {
+      const [theme, setTheme] = useState('light');
+      const [jdText, setJdText] = useState('');
+      const [jdFile, setJdFile] = useState(null);
+      const [resumes, setResumes] = useState([]);
+      const [isAnalyzing, setIsAnalyzing] = useState(false);
+      const [results, setResults] = useState(null);
+
+      // Handle Theme Persistence
+      useEffect(() => {
+        const savedTheme = localStorage.getItem('app-theme') || 'light';
+        setTheme(savedTheme);
+        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+      }, []);
+
+      const toggleTheme = () => {
+        const newTheme = theme === 'light' ? 'dark' : 'light';
+        setTheme(newTheme);
+        localStorage.setItem('app-theme', newTheme);
+        document.documentElement.classList.toggle('dark', newTheme === 'dark');
+      };
+
+      // --- Handlers ---
+
+      const handleJdFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          setJdFile(file);
+          // Simulate reading file text
+          setJdText(`JD Content from ${file.name}: Looking for a Senior Developer with 5+ years experience in React, Node.js, and cloud technologies. The ideal candidate should have strong problem-solving skills and experience working in agile teams.`);
+        }
+      };
+
+      const handleResumeUpload = async (e) => {
+        const files = Array.from(e.target.files || []);
+
+        // 🚫 STOP if no files
+        if (files.length === 0) return;
+
+        const formData = new FormData();
+
+        files.forEach(file => {
+          formData.append("files", file); // ✅ REQUIRED NAME
+        });
+
+        try {
+          const response = await fetch("http://localhost:8000/upload-resumes", {
+            method: "POST",
+            body: formData
+          });
+
+          if (!response.ok) {
+            const err = await response.text();
+            throw new Error(err);
+          }
+
+          const data = await response.json();
+          console.log("Uploaded resumes:", data);
+
+        } catch (err) {
+          console.error("Upload failed:", err);
+          alert("Backend error. Check server logs.");
+        }
+
+        // 🔑 RESET input so same file can be uploaded again
+        e.target.value = "";
+      };
+
+      const removeResume = (id) => {
+        setResumes(prev => prev.filter(r => r.id !== id));
+      };
+
+      const runAnalysis = async () => {
+        if (!jdText || resumes.length < MAX_RESUMES) return;
+
+        try {
+          setIsAnalyzing(true);
+          setResults(null);
+
+          // 1. Upload JD text
+          await uploadJDText(jdText);
+
+          // 2. Upload resumes
+          const resumeFiles = resumes.map(r => r.file);
+          await uploadResumes(resumeFiles);
+
+          // 3. Run analysis
+          await analyzeResumes();
+
+          // 4. Fetch results
+          const data = await fetchResults();
+
+          setResults(data.results);
+
+          setTimeout(() => {
+            document
+              .getElementById("results-section")
+              ?.scrollIntoView({ behavior: "smooth" });
+          }, 100);
+
+        } catch (err) {
+          console.error(err);
+          alert("Backend error. Check server logs.");
+        } finally {
+          setIsAnalyzing(false);
+        }
+      };
+
+      const resetAll = () => {
+        setResumes([]);
+        setResults(null);
+      };
+
+      // Debug: Monitor resume count
+      useEffect(() => {
+        console.log("Resume count:", resumes.length);
+      }, [resumes]);
+
+      return (
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300 font-sans selection:bg-indigo-100 dark:selection:bg-indigo-900">
+          
+          {/* Navbar */}
+          <nav className="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+            <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="bg-indigo-600 p-1.5 rounded-lg">
+                  <Icon name="brain-circuit" size={24} className="text-white" />
+                </div>
+                <h1 className="text-xl font-bold tracking-tight text-slate-800 dark:text-white">
+                  Screener<span className="text-indigo-600">AI</span>
+                </h1>
+              </div>
+              <ThemeToggle theme={theme} toggle={toggleTheme} />
+            </div>
+          </nav>
+
+          <main className="max-w-4xl mx-auto px-4 py-12">
+            
+            {/* Hero Section */}
+            <header className="mb-12 text-center">
+              <h2 className="text-3xl font-extrabold mb-3">AI Resume Screening</h2>
+              <p className="text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
+                Upload your job description and 5 candidate resumes to get an instant ranked analysis based on skill overlap and role fit.
+              </p>
+            </header>
+
+            <div className="space-y-8">
+              
+              {/* Step 1: JD Upload */}
+              <section className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:shadow-md">
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 text-sm font-bold">1</span>
+                  <h3 className="text-lg font-semibold">Job Description</h3>
+                </div>
+
+                <div className="space-y-4">
+                  <textarea
+                    className="w-full h-40 p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none text-sm"
+                    placeholder="Paste the Job Description here..."
+                    value={jdText}
+                    onChange={(e) => setJdText(e.target.value)}
+                  />
+                  
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <label className="flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-all">
+                        <Icon name="upload" size={18} className="text-slate-400" />
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                          {jdFile ? jdFile.name : "Or upload JD file (PDF/DOCX)"}
+                        </span>
+                        <input type="file" className="hidden" accept=".pdf,.docx,.txt" onChange={handleJdFileUpload} />
+                      </label>
+                    </div>
+                    {jdText && (
+                      <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-sm font-medium animate-slide-in-left">
+                        <Icon name="check-circle" size={16} /> JD Ready
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* Step 2: Resume Upload */}
+              <section className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm transition-all hover:shadow-md">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 text-sm font-bold">2</span>
+                    <h3 className="text-lg font-semibold">Candidate Resumes</h3>
+                  </div>
+                  <span className={`text-xs font-bold px-2 py-1 rounded ${resumes.length === MAX_RESUMES ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {resumes.length} / {MAX_RESUMES} Required
+                  </span>
+                </div>
+
+                <div className="grid gap-4">
+                  {resumes.map((file) => (
+                    <div key={file.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 animate-slide-in-bottom">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <div className="p-2 bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 rounded-lg shrink-0">
+                          <Icon name="file-text" size={18} />
+                        </div>
+                        <div className="truncate">
+                          <p className="text-sm font-medium truncate">{file.name}</p>
+                          <p className="text-xs text-slate-500">{file.size}</p>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => removeResume(file.id)}
+                        className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+                      >
+                        <Icon name="trash-2" size={18} />
+                      </button>
+                    </div>
+                  ))}
+
+                  {resumes.length < MAX_RESUMES && (
+                    <label className="flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-all group">
+                      <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-full group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900 transition-colors">
+                        <Icon name="upload" size={24} className="text-slate-400 group-hover:text-indigo-600" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-semibold">Click to upload resumes</p>
+                        <p className="text-xs text-slate-500 mt-1">Select {MAX_RESUMES - resumes.length} more files</p>
+                      </div>
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        multiple 
+                        accept=".pdf,.docx" 
+                        onChange={handleResumeUpload}
+                        disabled={resumes.length >= MAX_RESUMES}
+                      />
+                    </label>
+                  )}
+                </div>
+              </section>
+
+              {/* Action Area */}
+              <div className="pt-4 flex flex-col items-center">
+                <button
+                  onClick={runAnalysis}
+                  disabled={!jdText || resumes.length < MAX_RESUMES || isAnalyzing}
+                  className={`
+                    flex items-center justify-center gap-3 px-10 py-4 rounded-full font-bold text-lg transition-all shadow-lg
+                    ${!jdText || resumes.length < MAX_RESUMES || isAnalyzing
+                      ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 active:scale-95'
+                    }
+                  `}
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Icon name="loader-2" size={24} className="animate-spin" />
+                      Analyzing Candidates...
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="brain-circuit" size={24} />
+                      Analyze & Rank Resumes
+                    </>
+                  )}
+                </button>
+                {!isAnalyzing && resumes.length < MAX_RESUMES && (
+                  <p className="text-xs text-slate-500 mt-4 flex items-center gap-1">
+                    <Icon name="alert-circle" size={14} /> Finish uploading all 5 resumes to enable analysis
+                  </p>
+                )}
+              </div>
+
+              {/* Reset Button */}
+              {resumes.length > 0 && (
+                <div className="pt-2 flex justify-center">
+                  <button
+                    onClick={resetAll}
+                    className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline transition-all"
+                  >
+                    ↻ Reset Uploads
+                  </button>
+                </div>
+              )}
+
+              {/* Results Section */}
+              {results && (
+                <section id="results-section" className="space-y-6 pt-12 animate-fade-in">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+                    <h3 className="text-2xl font-bold">Screening Results</h3>
+                    <span className="text-sm text-slate-500">Sorted by AI Score</span>
+                  </div>
+
+                  <div className="space-y-4">
+                    {results.map((res, idx) => (
+                      <div 
+                        key={res.id} 
+                        className="group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all"
+                        style={{ animationDelay: `${idx * 100}ms` }}
+                      >
+                        <div className="flex flex-col md:flex-row">
+                          {/* Rank Indicator */}
+                          <div className={`w-full md:w-20 flex items-center justify-center py-4 md:py-0 ${
+                            idx === 0 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600' : 
+                            idx === 1 ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : 
+                            'bg-slate-50 dark:bg-slate-900 text-slate-400'
+                          }`}>
+                            {idx === 0 ? <Icon name="trophy" size={32} /> : <span className="text-2xl font-black">#{idx + 1}</span>}
+                          </div>
+
+                          {/* Content */}
+                          <div className="flex-1 p-6">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                              <div>
+                                <h4 className="text-lg font-bold flex items-center gap-2">
+                                  {res.name}
+                                  <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                    res.fit === 'High' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                    res.fit === 'Medium' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                    'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                  }`}>
+                                    {res.fit} Fit
+                                  </span>
+                                </h4>
+                                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{res.summary}</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <span className="text-3xl font-black text-indigo-600 dark:text-indigo-400">{res.score}%</span>
+                                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Match Score</p>
+                              </div>
+                            </div>
+
+                            <div className="mb-6">
+                              <ProgressBar 
+                                progress={res.score} 
+                                color={res.score > 85 ? 'bg-emerald-500' : res.score > 70 ? 'bg-indigo-600' : 'bg-slate-400'} 
+                              />
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              {res.matchedSkills.map(skill => (
+                                <span key={skill} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-medium border border-slate-200 dark:border-slate-700">
+                                  {skill}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Side Action */}
+                          <div className="hidden md:flex flex-col border-l border-slate-100 dark:border-slate-800 p-4 justify-center bg-slate-50/50 dark:bg-slate-800/20 group-hover:bg-indigo-50/30 dark:group-hover:bg-indigo-900/10 transition-colors">
+                            <button className="flex items-center gap-2 text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:gap-3 transition-all">
+                              View Details <Icon name="arrow-right" size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          </main>
+
+          {/* Footer */}
+          <footer className="mt-20 py-10 border-t border-slate-200 dark:border-slate-800 text-center text-slate-500 text-sm">
+            <p>© 2024 AI Resume Screening System. Internal Recruitment Tool v1.0.4</p>
+          </footer>
+        </div>
+      );
+    }
+
+    // Render the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
