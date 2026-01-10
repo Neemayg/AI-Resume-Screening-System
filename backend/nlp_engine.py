@@ -1,22 +1,20 @@
 """
 NLP Engine Module
-Handles text preprocessing, tokenization, and linguistic analysis.
-Uses NLTK for core NLP operations.
+Handles job description analysis and skill extraction using NLP techniques.
 """
 
-import re
+import os
 import json
 import logging
+from typing import List, Dict, Optional, Set
 from pathlib import Path
-from typing import List, Set, Dict, Optional, Tuple
-from collections import Counter
 
-# NLTK imports
+# NLP imports
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer, PorterStemmer
-from nltk import pos_tag
+from nltk import pos_tag, ne_chunk
+from nltk.chunk import tree2conlltags
 
 # Download required NLTK data
 def download_nltk_data():
