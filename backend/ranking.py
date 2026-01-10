@@ -11,6 +11,15 @@ from dataclasses import dataclass
 from config import SCORE_THRESHOLDS, SUMMARY_TEMPLATES
 from models import ResumeResult, FitCategory
 
+# Import weighted scoring
+try:
+    from scoring.weighted_scorer import weighted_scorer, ScoreBreakdown
+    WEIGHTED_SCORING_AVAILABLE = True
+except ImportError:
+    WEIGHTED_SCORING_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("Weighted scoring not available, using default scoring")
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -208,6 +217,7 @@ class RankingEngine:
                         job_title: Optional[str] = None) -> List[ResumeResult]:
         """
         Rank candidates based on their scores and generate final results.
+        Now includes weighted scoring with detailed breakdowns.
         
         Args:
             candidates: List of CandidateScore objects
@@ -221,8 +231,45 @@ class RankingEngine:
         for candidate in candidates:
             sim_data = candidate.similarity_data
             
-            # Get the final score
-            final_score = sim_data.get('final_score', 0)
+            # Get the basic score
+            base_score = sim_data.get('final_score', 0)
+            matched_skills = sim_data.get('matched_skills', [])
+            missing_skills = sim_data.get('missing_skills', [])
+            
+            # Apply weighted scoring if available
+            final_score = base_score
+            score_breakdown = {}
+            
+            if WEIGHTED_SCORING_AVAILABLE:
+                try:
+                    # Calculate weighted score
+                    breakdown = weighted_scorer.calculate_weighted_score(
+                        skill_match_score=base_score / 100,  # Normalize to 0-1
+                        matched_skills=matched_skills,
+                        missing_skills=missing_skills,
+                        total_required_skills=len(matched_skills) + len(missing_skills),
+                        experience_years=sim_data.get('experience_years', 0),
+                        required_experience=sim_data.get('required_experience', 0)
+                    )
+                    
+                    final_score = breakdown.final_score
+                    
+                    # Add detailed breakdown to result
+                    score_breakdown = {
+                        'skill_match': breakdown.skill_match,
+                        'experience_match': breakdown.experience_match,
+                        'semantic_similarity': breakdown.semantic_similarity,
+                        'role_alignment': breakdown.role_alignment,
+                        'education_match': breakdown.education_match,
+                        'penalties': breakdown.penalties,
+                        'bonuses': breakdown.bonuses,
+                        'category': weighted_scorer.get_score_category(final_score)
+                    }
+                    
+                    logger.debug(f"Weighted score for {candidate.resume_name}: {final_score:.1f}")
+                except Exception as e:
+                    logger.error(f"Weighted scoring failed: {e}, using base score")
+                    final_score = base_score
             
             # Determine fit category
             fit = self.determine_fit_category(final_score)
@@ -230,24 +277,24 @@ class RankingEngine:
             # Generate summary with actual resume content
             summary = self.generate_summary(
                 final_score,
-                sim_data.get('matched_skills', []),
-                sim_data.get('missing_skills', []),
-                sim_data.get('skill_breakdown', {}),
+                matched_skills,
+                missing_skills,
+                score_breakdown or sim_data.get('skill_breakdown', {}),
                 resume_text=candidate.original_text,
                 resume_name=candidate.resume_name
             )
             
             # Create result object
             result = ResumeResult(
-                rank=1,  # ✅ Must be >= 1 for Pydantic validation (will be updated after sorting)
+                rank=1,  # Will be updated after sorting
                 id=candidate.resume_id,
                 resume_name=candidate.resume_name,
                 match_score=int(round(final_score)),
                 fit=fit,
-                matched_skills=sim_data.get('matched_skills', [])[:8],  # Limit to 8
-                missing_skills=sim_data.get('missing_skills', [])[:5],  # Limit to 5
+                matched_skills=matched_skills[:8],
+                missing_skills=missing_skills[:5],
                 summary=summary,
-                skill_breakdown=sim_data.get('skill_breakdown', {})
+                skill_breakdown=score_breakdown or sim_data.get('skill_breakdown', {})
             )
             
             results.append(result)
@@ -259,7 +306,7 @@ class RankingEngine:
         for i, result in enumerate(results, 1):
             result.rank = i
         
-        logger.info(f"Ranked {len(results)} candidates")
+        logger.info(f"Ranked {len(results)} candidates (weighted_scoring={WEIGHTED_SCORING_AVAILABLE})")
         
         return results
     
