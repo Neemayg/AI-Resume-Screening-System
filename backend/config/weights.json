@@ -1,0 +1,14 @@
+{
+    "skill_match_weight": 0.30,
+    "core_skill_weight": 0.20,
+    "experience_weight": 0.20,
+    "semantic_similarity_weight": 0.15,
+    "role_alignment_weight": 0.10,
+    "education_weight": 0.05,
+    "missing_core_skill_penalty_weight": 0.15,
+    "experience_gap_penalty_weight": 0.10,
+    "education_mismatch_penalty_weight": 0.05,
+    "exact_role_bonus_weight": 0.05,
+    "certification_bonus_weight": 0.03,
+    "extra_skills_bonus_weight": 0.02
+}
