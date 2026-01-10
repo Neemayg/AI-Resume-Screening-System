@@ -603,14 +603,22 @@ def get_results(use_ai: bool = False):
             detail="No analysis results available. Please run /analyze first."
         )
     
-    # Get statistics
-    stats = ranking_engine.get_ranking_stats(app_state.results)
+    # Calculate statistics from stored ResumeResult objects
+    scores = [r.match_score for r in app_state.results]
+    stats = {
+        "average_score": sum(scores) / len(scores) if scores else 0,
+        "top_score": max(scores) if scores else 0,
+        "lowest_score": min(scores) if scores else 0,
+        "high_fit_count": sum(1 for r in app_state.results if r.fit == FitCategory.HIGH),
+        "medium_fit_count": sum(1 for r in app_state.results if r.fit == FitCategory.MEDIUM),
+        "low_fit_count": sum(1 for r in app_state.results if r.fit == FitCategory.LOW),
+    }
     
     # Fast mode - return results as-is
     if not use_ai:
         return {
             "success": True,
-            "job_title_detected": app_state.jd_analysis.get("detected_role") if app_state.jd_analysis else None,
+            "job_title_detected": app_state.jd_analysis.get("detected_role", {}).get("detected_role_title") if app_state.jd_analysis else None,
             "total_candidates": len(app_state.results),
             "results": [
                 {
@@ -621,7 +629,9 @@ def get_results(use_ai: bool = False):
                     "fit": r.fit.value,
                     "matched_skills": r.matched_skills,
                     "missing_skills": r.missing_skills,
-                    "summary": r.summary
+                    "summary": r.summary,
+                    "skill_breakdown": r.skill_breakdown,
+                    "explanation": r.explanation
                 }
                 for r in app_state.results
             ],
