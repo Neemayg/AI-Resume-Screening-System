@@ -30,13 +30,35 @@ from config import (
 )
 from models import (
     JobDescriptionText, ResumeResult, AnalysisResponse,
-    UploadResponse, ErrorResponse, HealthResponse, CompareRequest
+    UploadResponse, ErrorResponse, HealthResponse, CompareRequest,
+    FitCategory
 )
 from resume_parser import resume_parser
-from nlp_engine import nlp_engine
-from similarity_engine import similarity_engine
-from ranking import ranking_engine, CandidateScore
 from ai_service import ai_service
+from nlp_engine import nlp_engine
+
+# V2 System Imports
+from utils.data_loader import data_loader
+from matching.text_normalizer import text_normalizer
+from matching.skill_extractor import skill_extractor
+from matching.role_detector import role_detector
+from matching.section_parser import section_parser
+from matching.skill_matcher import skill_matcher
+from matching.semantic_scorer import semantic_scorer
+from ranking.ranking_engine import RankingEngine
+from dataclasses import asdict
+
+# Initialize V2 Engine
+v2_ranking_engine = RankingEngine(
+    skill_normalizer=skill_extractor,
+    role_detector=role_detector,
+    skill_matcher=skill_matcher,
+    experience_analyzer=None, # Integrated logic
+    semantic_analyzer=semantic_scorer,
+    penalty_calculator=None,
+    job_roles_data=data_loader._job_roles,
+    skills_data=data_loader._skills_dataset
+)
 
 # Configure logging
 logging.basicConfig(
@@ -103,13 +125,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Middleware
+# CORS Middleware - Hardcoded for debugging
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"], # Allow ALL origins
+    allow_credentials=True, # Allow credentials (cookies/auth)
+    allow_methods=["*"], # Allow ALL methods (POST, GET, etc)
+    allow_headers=["*"], # Allow ALL headers
 )
 
 
@@ -178,7 +200,7 @@ async def health_check():
 
 
 @app.post("/upload-jd", response_model=UploadResponse, tags=["Upload"])
-async def upload_job_description_file(file: UploadFile = File(...)):
+def upload_job_description_file(file: UploadFile = File(...)):
     """
     Upload a job description file (PDF, DOCX, or TXT).
     
@@ -242,7 +264,7 @@ async def upload_job_description_file(file: UploadFile = File(...)):
 
 
 @app.post("/upload-jd-text", response_model=UploadResponse, tags=["Upload"])
-async def upload_job_description_text(jd: JobDescriptionText):
+def upload_job_description_text(jd: JobDescriptionText):
     """
     Upload job description as plain text.
     
@@ -284,7 +306,7 @@ async def upload_job_description_text(jd: JobDescriptionText):
 
 
 @app.post("/upload-resumes", tags=["Upload"])
-async def upload_resumes(files: List[UploadFile] = File(...)):
+def upload_resumes(files: List[UploadFile] = File(...)):
     """
     Upload resume files (PDF or DOCX).
     
@@ -430,17 +452,11 @@ async def get_uploaded_resumes():
 
 
 @app.post("/analyze", response_model=AnalysisResponse, tags=["Analysis"])
-async def analyze_resumes():
+def analyze_resumes():
     """
-    Analyze all uploaded resumes against the job description.
-    
-    Requires:
-    - Job description to be uploaded
-    - Exactly 5 resumes to be uploaded
-    
-    Returns ranked results with match scores and analysis.
+    Analyze all uploaded resumes against the job description using V2 Advanced Scoring.
     """
-    logger.info("Starting resume analysis...")
+    logger.info("Starting resume analysis (V2 System)...")
     
     # Validate prerequisites
     if not app_state.jd_text:
@@ -456,84 +472,117 @@ async def analyze_resumes():
         )
     
     try:
-        # Set job description in similarity engine
-        app_state.jd_analysis = similarity_engine.set_job_description(
+        # 1. Analyze Job Description
+        jd_analysis = v2_ranking_engine.analyze_job_description(app_state.jd_text)
+        app_state.jd_analysis = jd_analysis # Store for /results endpoint
+        
+        logger.info(f"V2 Analysis - Role: {jd_analysis.get('detected_role_id')}")
+
+        # 2. Prepare Resumes (Parse sections)
+        resume_data_list = []
+        for resume in app_state.resumes:
+            try:
+                # Parse resume into structured sections
+                sections = section_parser.parse_resume(resume["original_text"])
+                
+                # Convert to dict for engine
+                resume_dict = asdict(sections)
+                resume_dict['id'] = resume['id']
+                resume_dict['name'] = resume['name']
+                resume_dict['text'] = resume['original_text']
+                # Ensure extracted skills list is present effectively
+                resume_dict['extracted_skills'] = sections.skills 
+                
+                resume_data_list.append(resume_dict)
+            except Exception as e:
+                logger.error(f"Error parsing resume {resume['name']}: {e}")
+                # Fallback to basic data
+                resume_data_list.append({
+                    'id': resume['id'],
+                    'name': resume['name'],
+                    'text': resume['original_text'],
+                    'extracted_skills': [],
+                    'experience': [],
+                    'education': []
+                })
+
+        # 3. Run Ranking Engine
+        ranked_resumes = v2_ranking_engine.rank_resumes(
+            resume_data_list, 
             app_state.jd_text,
-            app_state.jd_preprocessed
+            parallel=False # Sequential for safety in web req
         )
+
+        logger.info(f"Analysis complete. Top score: {ranked_resumes[0].final_score if ranked_resumes else 0}")
         
-        logger.info(f"JD Analysis: {app_state.jd_analysis}")
-        
-        # Prepare resume data for batch processing
-        resume_data = [
-            {
-                "original": r["original_text"],
-                "preprocessed": r["preprocessed_text"]
+        # 4. Map Results to API Model
+        api_results = []
+        for r in ranked_resumes:
+            # Map Category to FitCategory
+            cat = r.category
+            if "Excellent" in cat or "Strong" in cat:
+                fit = FitCategory.HIGH
+            elif "Good" in cat:
+                fit = FitCategory.MEDIUM
+            else:
+                fit = FitCategory.LOW
+            
+            # Construct explanation/breakdown
+            explanation = {
+                "strengths": r.strengths,
+                "weaknesses": r.weaknesses,
+                "score_breakdown": r.score_breakdown
             }
-            for r in app_state.resumes
-        ]
-        
-        # Compute similarities for all resumes
-        similarity_results = similarity_engine.batch_compute_similarity(resume_data)
-        
-        # Create candidate scores
-        candidates = []
-        for i, resume in enumerate(app_state.resumes):
-            candidate = CandidateScore(
-                resume_id=resume["id"],
-                resume_name=resume["name"],
-                original_text=resume["original_text"],
-                preprocessed_text=resume["preprocessed_text"],
-                similarity_data=similarity_results[i]
-            )
-            candidates.append(candidate)
-        
-        # Rank candidates
-        ranked_results = ranking_engine.rank_candidates(
-            candidates,
-            job_title=app_state.jd_analysis.get("detected_role")
-        )
-        
-        # Get ranking statistics
-        stats = ranking_engine.get_ranking_stats(ranked_results)
-        
+            
+            summary_text = f"{r.recommendation}. "
+            if r.strengths:
+                summary_text += f"Key strengths: {', '.join(r.strengths[:2])}. "
+            if r.weaknesses:
+                summary_text += f"Areas for review: {', '.join(r.weaknesses[:2])}."
+
+            api_results.append(ResumeResult(
+                rank=r.rank,
+                id=r.resume_id,
+                resume_name=r.candidate_name,
+                match_score=int(round(r.final_score)),
+                fit=fit,
+                matched_skills=r.matched_skills,
+                missing_skills=r.missing_critical_skills,
+                summary=summary_text,
+                skill_breakdown=r.score_breakdown['component_scores'],
+                explanation=explanation
+            ))
+            
         # Store results
-        app_state.results = ranked_results
+        app_state.results = api_results
         app_state.analysis_complete = True
         
-        logger.info(f"Analysis complete. Top score: {ranked_results[0].match_score}%")
-        
-        # Convert results to dict for response
-        results_dict = [
-            {
-                "rank": r.rank,
-                "id": r.id,
-                "resume_name": r.resume_name,
-                "match_score": r.match_score,
-                "fit": r.fit.value,
-                "matched_skills": r.matched_skills,
-                "missing_skills": r.missing_skills,
-                "summary": r.summary,
-                "skill_breakdown": r.skill_breakdown
+        # Get simplified statistics
+        stats = {
+            "average_score": sum(r.match_score for r in api_results) / len(api_results) if api_results else 0,
+            "top_score": api_results[0].match_score if api_results else 0,
+            "distribution": {
+                "High": sum(1 for r in api_results if r.fit == FitCategory.HIGH),
+                "Medium": sum(1 for r in api_results if r.fit == FitCategory.MEDIUM),
+                "Low": sum(1 for r in api_results if r.fit == FitCategory.LOW)
             }
-            for r in ranked_results
-        ]
-        
+        }
+
         return AnalysisResponse(
             success=True,
-            message="Analysis completed successfully",
-            job_title_detected=app_state.jd_analysis.get("detected_role"),
-            total_candidates=len(ranked_results),
-            results=ranked_results,
+            message="Analysis completed successfully (V2 Engine)",
+            job_title_detected=jd_analysis.get('detected_role', {}).get('detected_role_title'),
+            total_candidates=len(api_results),
+            results=api_results,
             analysis_metadata={
-                "jd_skills_count": len(app_state.jd_analysis.get("skills_required", [])),
-                "experience_level": app_state.jd_analysis.get("experience_level"),
+                "jd_skills_count": len(jd_analysis.get('all_required_skills', [])),
+                "detected_role_confidence": jd_analysis.get('detected_role', {}).get('confidence'),
                 "statistics": stats
             }
         )
-        
+
     except Exception as e:
-        logger.error(f"Analysis error: {str(e)}")
+        logger.error(f"V2 Analysis error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Analysis failed: {str(e)}"
@@ -541,7 +590,7 @@ async def analyze_resumes():
 
 
 @app.get("/results", tags=["Analysis"])
-async def get_results(use_ai: bool = False):
+def get_results(use_ai: bool = False):
     """
     Get the latest analysis results.
     

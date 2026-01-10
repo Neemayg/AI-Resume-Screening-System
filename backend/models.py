@@ -46,6 +46,7 @@ class ResumeResult(BaseModel):
     missing_skills: List[str] = Field(default=[], description="List of missing required skills")
     summary: str = Field(..., description="AI-generated summary of the candidate")
     skill_breakdown: Optional[dict] = Field(default=None, description="Detailed skill category breakdown")
+    explanation: Optional[dict] = Field(default=None, description="Detailed explanation of score (strengths, gaps, tips)")
 
 
 class AnalysisResponse(BaseModel):

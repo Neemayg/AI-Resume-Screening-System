@@ -26,19 +26,53 @@ class ScoreComponents:
     extra_relevant_skills_bonus: float = 0.0
 
 
+@dataclass
+class ScoreResult:
+    final_score: float
+    breakdown: Dict
+
 class EnhancedScoreCombiner:
     """Combines multiple scoring signals into final score."""
     
     def __init__(self, weights: Optional[Dict] = None):
         """Initialize with configurable weights."""
         self.weights = weights or {
-            "skill_match_weight": 0.30,
-            "experience_weight": 0.20,
-            "semantic_similarity_weight": 0.20,
-            "role_alignment_weight": 0.15,
+            "skill_match_weight": 0.40,  # Increased
+            "experience_weight": 0.10,
+            "semantic_similarity_weight": 0.30, # Increased
+            "role_alignment_weight": 0.10,
             "education_weight": 0.10
         }
     
+    def combine_scores(self, 
+                      tfidf_score: float, 
+                      semantic_score: float, 
+                      skill_match_data: object,
+                      custom_weights: Optional[Dict] = None) -> ScoreResult:
+        """
+        Bridge method to combine scores from similarity engine.
+        """
+        # Create components from inputs
+        components = ScoreComponents(
+            skill_match_score=getattr(skill_match_data, 'score', 0.0),
+            semantic_similarity_score=semantic_score if semantic_score > 0 else tfidf_score, # Fallback to TF-IDF if semantic missing
+            experience_score=0.8, # Default assumption for now
+            role_alignment_score=tfidf_score, # Use TF-IDF as proxy for role alignment
+            education_score=0.8, # Default assumption
+            
+            # Extract penalties/bonuses from skill data
+            missing_core_skills_penalty=0.0, # Handled in skill score already
+            extra_relevant_skills_bonus=0.0
+        )
+        
+        # Calculate
+        result_dict = self.calculate_final_score(components)
+        
+        return ScoreResult(
+            final_score=result_dict['final_score'],
+            breakdown=result_dict['breakdown']
+        )
+
     def calculate_final_score(self, components: ScoreComponents) -> Dict:
         """
         Calculate final score with breakdown.
@@ -110,5 +144,6 @@ class EnhancedScoreCombiner:
             return "Does not meet minimum requirements"
 
 
-# Singleton
-enhanced_score_combiner = EnhancedScoreCombiner()
+# Singleton instance match for import
+score_combiner = EnhancedScoreCombiner()
+

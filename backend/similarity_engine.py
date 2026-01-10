@@ -206,15 +206,15 @@ class SimilarityEngine:
         """
         Compute weighted final score from component scores.
         
-        Weights:
-        - TF-IDF: 40% (general content similarity)
-        - Skills: 45% (specific skill matching)
-        - Keywords: 15% (keyword presence)
+        Weights (adjusted to be less strict):
+        - TF-IDF: 30% (general content similarity)
+        - Skills: 50% (specific skill matching - increased weight)
+        - Keywords: 20% (keyword presence - increased)
         """
         weights = {
-            'tfidf': 0.40,
-            'skills': 0.45,
-            'keywords': 0.15
+            'tfidf': 0.30,
+            'skills': 0.50,  # Increased from 0.45
+            'keywords': 0.20  # Increased from 0.15
         }
         
         weighted_score = (
@@ -223,9 +223,13 @@ class SimilarityEngine:
             keywords * weights['keywords']
         )
         
-        # Apply slight boost for very high skill matches
-        if skills > 0.8:
-            weighted_score = min(weighted_score * 1.05, 1.0)
+        # Apply boost for decent skill matches (lowered threshold)
+        if skills > 0.4:  # Changed from 0.8
+            weighted_score = min(weighted_score * 1.15, 1.0)  # Increased boost
+        
+        # Apply bonus for any keyword matches
+        if keywords > 0.3:
+            weighted_score = min(weighted_score * 1.10, 1.0)
         
         return weighted_score
     
@@ -259,6 +263,88 @@ class SimilarityEngine:
                 }
         
         return breakdown
+
+    def enhanced_compute_similarity(self, 
+                                  resume_text: str, 
+                                  resume_preprocessed: str,
+                                  jd_role_detection: Optional[Dict] = None) -> Dict:
+        """
+        Compute similarity using advanced matching modules.
+        Integrates Skill Matcher, Semantic Scorer, and Role Detection.
+        """
+        # 1. Base TF-IDF Score
+        base_result = self.compute_similarity(resume_text, resume_preprocessed)
+        
+        try:
+            # 2. Advanced Scoring Components
+            from matching.skill_matcher import skill_matcher
+            from matching.semantic_scorer import semantic_scorer
+            from scoring.enhanced_score_combiner import score_combiner
+            from scoring.role_weight_adjuster import role_weight_adjuster
+            
+            # Semantic Score
+            semantic_result = semantic_scorer.score_resume_for_jd(
+                resume_text, self.jd_text
+            )
+            semantic_score_val = semantic_result.get('overall_score', 0.0)
+            
+            # Skill Match Score
+            
+            # Skill Match Score
+            # Extract skills first
+            resume_skills_dict = nlp_engine.extract_skills(resume_text)
+            resume_skill_list = resume_skills_dict.get('all', [])
+            
+            # Use pre-extracted JD skills if available, otherwise extract
+            jd_skill_list = getattr(self, 'jd_skills', [])
+            if not jd_skill_list:
+                 jd_skill_list = nlp_engine.extract_skills(self.jd_text).get('all', [])
+
+            skill_match_result = skill_matcher.match_skills(
+                jd_skill_list, resume_skill_list
+            )
+            
+            # Detect Resume Role
+            resume_role = None
+            if jd_role_detection:
+                from matching.role_detector import role_detector
+                resume_role = role_detector.detect_role(resume_text)
+            
+            # Adjust Weights based on Role
+            weights = None
+            if jd_role_detection and resume_role:
+                weights = role_weight_adjuster.adjust_weights(
+                    jd_role_detection, resume_role
+                )
+            
+            # Combine Scores
+            final_score_data = score_combiner.combine_scores(
+                tfidf_score=base_result['tfidf_score'],
+                semantic_score=semantic_score_val,
+                skill_match_data=skill_match_result,
+                custom_weights=weights
+            )
+            
+            # Merge results
+            base_result.update({
+                'final_score': final_score_data.final_score,
+                'semantic_score': semantic_score_val * 100,
+                'skill_match_score': skill_match_result.match_score,
+                'matched_skills': skill_match_result.matched_skills,
+                'missing_skills': skill_match_result.missing_skills,
+                'enhanced_breakdown': final_score_data.breakdown,
+                'skill_match_detail': {
+                    'matched_core': skill_match_result.matched_skills, # Simplified for now
+                    'missing_core': skill_match_result.missing_skills,
+                    'coverage': skill_match_result.match_score / 100
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Enhanced scoring failed: {e}")
+            # Fallback will use base_result as is
+            
+        return base_result
     
     def batch_compute_similarity(self, 
                                  resumes: List[Dict[str, str]]) -> List[Dict]:

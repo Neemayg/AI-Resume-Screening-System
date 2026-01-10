@@ -28,8 +28,12 @@ class DataLoader:
     
     def _initialize(self):
         """Load all datasets on first instantiation."""
-        base_path = os.path.dirname(os.path.dirname(__file__))
-        data_path = os.path.join(base_path, 'datasets')
+        # Adjusted path to match backend structure: backend/utils -> backend/datasets (assumed data location)
+        # Original code used os.path.dirname(os.path.dirname(__file__)) -> data
+        # In this project, data is in backend/datasets usually
+        
+        base_path = os.path.dirname(os.path.dirname(__file__)) # Should be backend/
+        data_path = os.path.join(base_path, 'datasets') # Adjusted to likely location
         
         # Load job roles
         job_roles_path = os.path.join(data_path, 'job_roles.json')
@@ -53,14 +57,25 @@ class DataLoader:
         self._build_skill_lookup()
         self._build_role_lookup()
         
-        logger.info(f"Loaded {len(self._job_roles.get('job_roles', {}))} job roles")
+        logger.info(f"Loaded {len(self._job_roles)} job roles")
         logger.info(f"Loaded skills dataset with {len(self._skill_lookup)} skills")
     
     def _build_skill_lookup(self):
-        """Build a normalized skill lookup dictionary."""
+        """
+        Build a normalized skill lookup dictionary.
+        Maps all variations/aliases to canonical skill names.
+        """
         self._skill_lookup = {}
         
-        for category, skills in self._skills_dataset.items():
+        for category, data in self._skills_dataset.items():
+            # Handle dictionary structure (e.g., {"skills": [...]})
+            if isinstance(data, dict):
+                skills = data.get('skills', [])
+            elif isinstance(data, list):
+                skills = data
+            else:
+                continue
+                
             if not isinstance(skills, list):
                 continue
                 
@@ -98,12 +113,12 @@ class DataLoader:
                     }
     
     def _build_role_lookup(self):
-        """Build role lookup with aliases."""
+        """
+        Build role lookup with aliases.
+        """
         self._role_lookup = {}
         
-        job_roles_dict = self._job_roles.get('job_roles', {})
-        
-        for role_key, role_data in job_roles_dict.items():
+        for role_key, role_data in self._job_roles.items():
             canonical = role_data.get('title', role_key)
             aliases = role_data.get('aliases', [])
             
@@ -142,6 +157,10 @@ class DataLoader:
         """Normalize role name for lookup."""
         return name.lower().strip().replace('-', ' ').replace('_', ' ')
     
+    # =========================================================================
+    # PUBLIC METHODS
+    # =========================================================================
+    
     def get_skill_info(self, skill_name: str) -> Optional[Dict]:
         """Look up skill information by name or alias."""
         normalized = self._normalize_skill_name(skill_name)
@@ -159,7 +178,21 @@ class DataLoader:
     
     def get_all_roles(self) -> Dict:
         """Get all role definitions."""
-        return self._job_roles.get('job_roles', {})
+        return self._job_roles
+    
+    def get_skills_by_category(self, category: str) -> List[Dict]:
+        """Get all skills in a category."""
+        return self._skills_dataset.get(category, [])
+    
+    def get_role_core_skills(self, role_key: str) -> List[str]:
+        """Get core required skills for a role."""
+        role_data = self._job_roles.get(role_key, {})
+        return role_data.get('core_skills', [])
+    
+    def get_role_secondary_skills(self, role_key: str) -> List[str]:
+        """Get secondary/preferred skills for a role."""
+        role_data = self._job_roles.get(role_key, {})
+        return role_data.get('secondary_skills', [])
     
     def find_similar_skills(self, skill_name: str) -> List[str]:
         """Find related/similar skills."""

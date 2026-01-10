@@ -138,7 +138,8 @@ class RankingEngine:
                          missing_skills: List[str],
                          skill_breakdown: Dict,
                          resume_text: str = None,
-                         resume_name: str = None) -> str:
+                         resume_name: str = None,
+                         explanation: Dict = None) -> str:
         """
         Generate a detailed, personalized summary for the candidate.
         Actually reads the resume content to extract specific information.
@@ -210,6 +211,16 @@ class RankingEngine:
                 parts.append(f"Lacks key skills: {', '.join(missing_skills[:3])}.")
             parts.append("May require significant training or better suited for a different role.")
         
+        if explanation:
+            strengths = explanation.get('strengths', [])
+            gaps = explanation.get('gaps', [])
+            
+            if strengths:
+                parts.append(f" Pros: {'; '.join(strengths[:2])}.")
+            
+            if gaps:
+                parts.append(f" Cons: {'; '.join(gaps[:2])}.")
+        
         return ' '.join(parts)
     
     def rank_candidates(self, 
@@ -274,6 +285,25 @@ class RankingEngine:
             # Determine fit category
             fit = self.determine_fit_category(final_score)
             
+            # Generate explanation if available
+            explanation_data = None
+            try:
+                from explainability.explanation_generator import explanation_generator
+                # Use simplified explanation structure for API optimization
+                explanation_obj = explanation_generator.generate_explanation(
+                    candidate.resume_name,
+                    {'final_score': final_score, 'enhanced_breakdown': score_breakdown, 'skill_match_detail': sim_data.get('skill_match_detail', {})},
+                    job_title or "Job Role"
+                )
+                explanation_data = {
+                    "summary": explanation_obj.summary,
+                    "strengths": explanation_obj.strengths,
+                    "gaps": explanation_obj.gaps,
+                    "tips": explanation_obj.improvement_tips
+                }
+            except Exception as e:
+                logger.warning(f"Failed to generate explanation: {e}")
+            
             # Generate summary with actual resume content
             summary = self.generate_summary(
                 final_score,
@@ -281,10 +311,12 @@ class RankingEngine:
                 missing_skills,
                 score_breakdown or sim_data.get('skill_breakdown', {}),
                 resume_text=candidate.original_text,
-                resume_name=candidate.resume_name
+                resume_name=candidate.resume_name,
+                explanation=explanation_data
             )
             
             # Create result object
+
             result = ResumeResult(
                 rank=1,  # Will be updated after sorting
                 id=candidate.resume_id,
@@ -294,7 +326,8 @@ class RankingEngine:
                 matched_skills=matched_skills[:8],
                 missing_skills=missing_skills[:5],
                 summary=summary,
-                skill_breakdown=score_breakdown or sim_data.get('skill_breakdown', {})
+                skill_breakdown=score_breakdown or sim_data.get('skill_breakdown', {}),
+                explanation=explanation_data
             )
             
             results.append(result)

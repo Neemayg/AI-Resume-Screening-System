@@ -3,18 +3,20 @@ NLP Engine Module
 Handles job description analysis and skill extraction using NLP techniques.
 """
 
+import re
 import os
 import json
 import logging
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
 from pathlib import Path
+from collections import Counter
 
 # NLP imports
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
-from nltk import pos_tag, ne_chunk
-from nltk.chunk import tree2conlltags
+from nltk.stem import WordNetLemmatizer, PorterStemmer
+from nltk import pos_tag
 
 # Download required NLTK data
 def download_nltk_data():
@@ -241,6 +243,12 @@ class NLPEngine:
             
             if category_skills:
                 extracted[category] = list(set(category_skills))
+        
+        # Flatten all skills
+        all_skills = []
+        for cat_skills in extracted.values():
+            all_skills.extend(cat_skills)
+        extracted['all'] = list(set(all_skills))
         
         return extracted
     
