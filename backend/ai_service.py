@@ -38,32 +38,53 @@ class AIService:
             logger.warning("Ollama not running. Start with: ollama serve")
             return False
     
-    def _call_ollama(self, prompt: str, max_tokens: int = 500) -> str:
-        """Call Ollama API with a prompt."""
-        try:
-            response = requests.post(
-                f"{self.base_url}/api/generate",
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "num_predict": max_tokens,
-                        "temperature": 0.3,
-                    }
-                },
-                timeout=120
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("response", "").strip()
-            else:
-                logger.error(f"Ollama error: {response.status_code}")
-                return ""
-        except Exception as e:
-            logger.error(f"Ollama call failed: {e}")
-            return ""
+    def _call_ollama(self, prompt: str, max_tokens: int = 500, max_retries: int = 3) -> str:
+        """Call Ollama API with a prompt. Includes retry logic for reliability."""
+        import time
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Ollama API call attempt {attempt + 1}/{max_retries}")
+                
+                response = requests.post(
+                    f"{self.base_url}/api/generate",
+                    json={
+                        "model": self.model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {
+                            "num_predict": max_tokens,
+                            "temperature": 0.3,
+                        }
+                    },
+                    timeout=180  # Increased from 120 to 180 seconds
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    response_text = result.get("response", "").strip()
+                    
+                    if response_text:  # Only return if we got actual content
+                        logger.info(f"Ollama API call successful on attempt {attempt + 1}")
+                        return response_text
+                    else:
+                        logger.warning(f"Empty response from Ollama on attempt {attempt + 1}")
+                else:
+                    logger.error(f"Ollama error: {response.status_code} on attempt {attempt + 1}")
+                    
+            except requests.Timeout:
+                logger.warning(f"Ollama timeout on attempt {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    logger.info(f"Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+            except Exception as e:
+                logger.error(f"Ollama call failed on attempt {attempt + 1}: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+        
+        logger.error(f"All {max_retries} Ollama attempts failed")
+        return ""
     
     def analyze_resume(self, resume_text: str, job_description: str) -> Dict:
         """
