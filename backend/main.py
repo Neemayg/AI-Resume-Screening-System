@@ -23,20 +23,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 # Local imports
-from backend.config import (
+from config import (
     CORS_ORIGINS, API_TITLE, API_DESCRIPTION, API_VERSION,
     JD_UPLOAD_DIR, RESUME_UPLOAD_DIR, MAX_RESUMES, ALLOWED_EXTENSIONS,
     MAX_FILE_SIZE_MB
 )
-from backend.models import (
+from models import (
     JobDescriptionText, ResumeResult, AnalysisResponse,
     UploadResponse, ErrorResponse, HealthResponse, CompareRequest
 )
-from backend.resume_parser import resume_parser
-from backend.nlp_engine import nlp_engine
-from backend.similarity_engine import similarity_engine
-from backend.ranking import ranking_engine, CandidateScore
-from backend.ai_service import ai_service
+from resume_parser import resume_parser
+from nlp_engine import nlp_engine
+from similarity_engine import similarity_engine
+from ranking import ranking_engine, CandidateScore
+from ai_service import ai_service
 
 # Configure logging
 logging.basicConfig(
@@ -697,11 +697,23 @@ async def improve_job_description(jd: JobDescriptionText):
 async def compare_candidates(request: CompareRequest):
     """
     Compare selected candidates side-by-side.
+    
+    Requires:
+    - Job description to be uploaded
+    - Analysis to be completed
+    - At least 2 candidate IDs
     """
+    # Validate prerequisites
     if not app_state.jd_text:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Job description required"
+            detail="Job description required. Please upload a JD first."
+        )
+    
+    if not app_state.analysis_complete or not app_state.results:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Analysis must be completed before comparison. Please run analysis first."
         )
         
     if len(request.candidate_ids) < 2:
@@ -709,31 +721,46 @@ async def compare_candidates(request: CompareRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Select at least 2 candidates to compare"
         )
+    
+    # Extract candidate data for comparison
+    candidates_to_compare = []
+    for candidate_id in request.candidate_ids:
+        # Find the resume data
+        resume_data = next((r for r in app_state.resumes if r["id"] == candidate_id), None)
         
-    # Get candidate data
-    candidates = []
-    for cid in request.candidate_ids:
-        cand = next((r for r in app_state.results if r.id == cid), None) # Use results, not resumes
-        if cand:
-            candidates_data = next((r for r in app_state.resumes if r["id"] == cid), None)
-            if candidates_data:
-                # We need CandidateScore objects for logic, but let's see what ai_service expects
-                # ai_service.compare_candidates expects Dict or object?
-                # Let's check ai_service.py to be sure.
-                # Actually, ai_service.compare_candidates takes (candidates_list, jd_text).
-                candidates.append(candidates_data)
-            
-    if len(candidates) < 2:
+        if not resume_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Candidate {candidate_id} not found"
+            )
+        
+        # Get the analysis result for additional context
+        result_data = next((r for r in app_state.results if r.id == candidate_id), None)
+        
+        # Prepare candidate data for AI service
+        candidate_info = {
+            "name": resume_data["name"],
+            "original_text": resume_data["original_text"],
+            "matched_skills": result_data.matched_skills if result_data else [],
+            "match_score": result_data.match_score if result_data else 0
+        }
+        candidates_to_compare.append(candidate_info)
+    
+    if len(candidates_to_compare) < 2:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Selected candidates not found"
+            detail="Could not find data for selected candidates"
         )
-        
+    
     try:
-        result = ai_service.compare_candidates(candidates, app_state.jd_text)
+        # Call AI service to compare candidates
+        comparison_result = ai_service.compare_candidates(candidates_to_compare, app_state.jd_text)
+        
+        logger.info(f"Comparison completed for {len(candidates_to_compare)} candidates")
+        
         return {
             "success": True,
-            "comparison": result
+            "comparison": comparison_result
         }
     except Exception as e:
         logger.error(f"Comparison error: {e}")
