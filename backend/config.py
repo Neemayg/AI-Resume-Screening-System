@@ -70,12 +70,14 @@ SUMMARY_TEMPLATES = {
     ]
 }
 
-# CORS settings
+# CORS Configuration
 CORS_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
+    "file://",  # Allow local file access
+    "null",  # Allow local file access (Chrome/Safari use 'null' for file://)
     "http://localhost:8080",
     "*"  # Allow all origins for development
 ]

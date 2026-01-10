@@ -1306,7 +1306,7 @@
 
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
-    const API = "http://localhost:8000";
+    const API = "http://127.0.0.1:8000";
 
     function App() {
       const [jd, setJd] = useState('');
@@ -1775,6 +1775,46 @@
                             ))}
                           </div>
                         </div>
+
+                        {/* AI Explanation Section */}
+                        {r.explanation && (
+                          <div className="explanation-section" style={{ marginTop: '16px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                              <span>💡</span>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '14px' }}>AI Match Insight</div>
+                            </div>
+
+                            <p style={{ fontSize: '14px', lineHeight: '1.5', margin: '0 0 12px 0', color: 'var(--text-secondary)' }}>
+                              {r.explanation.summary}
+                            </p>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                              {/* Strengths */}
+                              {r.explanation.strengths?.length > 0 && (
+                                <div className="explanation-box">
+                                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--success)', textTransform: 'uppercase', marginBottom: '4px' }}>Key Matches</div>
+                                  <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                                    {r.explanation.strengths.slice(0, 2).map((s, i) => (
+                                      <li key={i} style={{ marginBottom: '2px' }}>{s}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {/* Tips */}
+                              {r.explanation.tips?.length > 0 && (
+                                <div className="explanation-box">
+                                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--primary)', textTransform: 'uppercase', marginBottom: '4px' }}>Recommendation</div>
+                                  <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                                    {r.explanation.tips.slice(0, 2).map((t, i) => (
+                                      <li key={i} style={{ marginBottom: '2px' }}>{t}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
