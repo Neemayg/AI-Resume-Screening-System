@@ -28,10 +28,8 @@ Thumbs.db
 .env.local
 
 # Uploads (temporary files)
-backend/uploads/*.pdf
-backend/uploads/*.docx
-backend/uploads/*.doc
-backend/uploads/*.txt
+backend/uploads/**/*
+!backend/uploads/.gitkeep
 
 # Keep the uploads directory
 !backend/uploads/.gitkeep
