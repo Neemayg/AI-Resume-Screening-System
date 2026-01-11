@@ -1,0 +1,6 @@
+The system MUST:
+- Use only explicit resume content
+- NEVER infer years of experience
+- NEVER infer degrees
+- NEVER label seniority
+- If data is missing, say "Not mentioned"

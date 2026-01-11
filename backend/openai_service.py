@@ -25,30 +25,31 @@ class ResumeAnalyzer:
             max_features=5000
         )
         
-        # Load Tuning Intent (Freeze the role)
-        self.intent = {}
-        try:
-            intent_path = Path("tuning/jd_intent.json")
-            if intent_path.exists():
-                with open(intent_path, 'r') as f:
-                    self.intent = json.load(f)
-                logger.info(f"❄️ Role Intent FROZEN: {self.intent}")
-        except Exception as e:
-            logger.warning(f"Failed to load tuning intent: {e}")
-            
-        # Load Semantic Map (New: Synonyms & Concept Mapping)
+        # Load Tuning Configs
+        self.context = {}
+        self.skill_buckets = {}
+        self.rec_thresholds = {}
         self.semantic_map = {}
-        try:
-            map_path = Path("tuning/semantic_skill_map.json")
-            if map_path.exists():
-                with open(map_path, 'r') as f:
-                    self.semantic_map = json.load(f)
-                logger.info(f"🧠 Semantic Map LOADED: {list(self.semantic_map.keys())}")
-        except Exception as e:
-            logger.warning(f"Failed to load semantic map: {e}")
         
-        # Common tech skills for matching
-        # Comprehensive tech skills for matching
+        try:
+            # Context
+            if Path("tuning/context.json").exists():
+                with open("tuning/context.json", 'r') as f: self.context = json.load(f)
+            # Skill Buckets
+            if Path("tuning/skill_buckets.json").exists():
+                with open("tuning/skill_buckets.json", 'r') as f: self.skill_buckets = json.load(f)
+            # Recommendation
+            if Path("tuning/recommendation.json").exists():
+                with open("tuning/recommendation.json", 'r') as f: self.rec_thresholds = json.load(f)
+            # Semantic Map
+            if Path("tuning/semantic_skill_map.json").exists():
+                with open("tuning/semantic_skill_map.json", 'r') as f: self.semantic_map = json.load(f)
+                
+            logger.info(f"🔧 Tuning Loaded. Mode: {self.context.get('role_type', 'standard')}")
+        except Exception as e:
+            logger.warning(f"Tuning load error: {e}")
+            
+        # Fallback/Base Skills
         self.tech_skills = {
             # Programming Languages
             'python', 'javascript', 'typescript', 'java', 'c++', 'c#', 'ruby', 'go', 'rust', 'php', 'swift', 'kotlin', 'scala', 'r', 'dart', 'lua', 'perl', 'bash', 'shell',
@@ -74,6 +75,11 @@ class ResumeAnalyzer:
             # Tools & Practices
             'git', 'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'agile', 'scrum', 'kanban', 'tdd', 'ci/cd', 'sdlc', 'devops'
         }
+        
+        # Add bucket skills to tech_skills
+        if self.skill_buckets:
+            for cat in self.skill_buckets.values():
+                self.tech_skills.update(set(cat))
         
         # Soft Skills (New: Jobscan-style matching)
         self.soft_skills = {
@@ -207,9 +213,38 @@ class ResumeAnalyzer:
         except:
             return 0.0
     
+    def _classify_skills(self, found_skills: List[str]) -> Dict[str, List[str]]:
+        """Sort found skills into buckets based on config."""
+        classified = {
+            "core": [],
+            "project": [],
+            "preferred": [],
+            "other": []
+        }
+        
+        if not self.skill_buckets:
+            # Fallback if buckets not loaded
+            classified["core"] = found_skills
+            return classified
+            
+        found_set = set(found_skills)
+        
+        # Check against buckets
+        for skill in found_set:
+            if skill in self.skill_buckets.get('core_ai', []):
+                classified["core"].append(skill)
+            elif skill in self.skill_buckets.get('ml_projects', []):
+                classified["project"].append(skill)
+            elif skill in self.skill_buckets.get('preferred', []):
+                classified["preferred"].append(skill)
+            else:
+                classified["other"].append(skill)
+                
+        return classified
+
     def analyze_resume(self, resume_text: str, job_description: str, resume_name: str = "Candidate") -> Dict:
         """
-        Analyze a resume using NLP techniques.
+        Analyze a resume using NLP techniques and Bucketed Scoring.
         """
         # Extract candidate info
         name = self.extract_name(resume_text)
@@ -220,98 +255,77 @@ class ResumeAnalyzer:
         exp_years = self.extract_experience_years(resume_text)
         education = self.extract_education(resume_text)
         
-        # Extract skills
-        resume_tech_skills = set(self.extract_skills(resume_text))
-        jd_tech_skills = set(self.extract_skills(job_description))
+        # Extract skills & Soft Skills
+        raw_skills = self.extract_skills(resume_text) # Uses semantic map expansion implicitly
         
-        resume_soft_skills = set(self.extract_soft_skills(resume_text))
-        jd_soft_skills = set(self.extract_soft_skills(job_description))
+        # Classify Skills into Buckets
+        classified = self._classify_skills(raw_skills)
         
-        # Combine for backward compatibility logic, but keep separate for reporting
-        matched_tech = list(resume_tech_skills & jd_tech_skills)
-        matched_soft = list(resume_soft_skills & jd_soft_skills)
+        matched_soft = list(set(self.extract_soft_skills(resume_text)))
         
-        matched_skills = matched_tech + matched_soft
-        missing_skills = list(jd_tech_skills - resume_tech_skills) # Focus on missing TECH skills for gaps
+        # Calculate Score (Bucketed Formula)
+        # Formula: Core*60 + Project*25 + Preferred*15
         
-        # Calculate match score
-        tfidf_score = self.calculate_similarity(resume_text, job_description)
+        # Core
+        total_core = len(self.skill_buckets.get('core_ai', [])) or 1
+        core_score_val = min(1.0, len(classified['core']) / total_core)
         
-        # New Scoring Formula (70% Core, 20% Preferred, 10% Project)
-        # Note: in this simplified version, we treat ALL matched tech skills as Core since we don't have labeled JD sections yet.
-        # Ideally, we'd split JD skills into 'Required' vs 'Nice to have'.
+        # Project
+        total_proj = len(self.skill_buckets.get('ml_projects', [])) or 1
+        proj_score_val = min(1.0, len(classified['project']) / total_proj)
         
-        # Core Tech Score (Base 70%)
-        tech_coverage = len(matched_tech) / max(len(jd_tech_skills), 1) if jd_tech_skills else 0.5
-        core_score = tech_coverage * 70
+        # Preferred
+        total_pref = len(self.skill_buckets.get('preferred', [])) or 1
+        pref_score_val = min(1.0, len(classified['preferred']) / total_pref)
         
-        # Text Similarity as Proxy for "Preferred/Context" (Base 20%)
-        preferred_score = tfidf_score * 20
+        # Weighted Sum
+        raw_score = (core_score_val * 60) + (proj_score_val * 25) + (pref_score_val * 15)
         
-        # Project Bonus (Base 10%)
-        project_bonus = 0
-        resume_lower = resume_text.lower()
-        if "machine learning" in resume_lower or "deep learning" in resume_lower or "scikit-learn" in resume_lower:
-            project_bonus += 5
-        if "nlp" in resume_lower or "natural language processing" in resume_lower or "spacy" in resume_lower:
-            project_bonus += 5
+        # Text Context Bonus (Small weight from TF-IDF)
+        tfidf_score = self.calculate_similarity(resume_text, job_description) * 100
+        final_score = raw_score + (tfidf_score * 0.1) # Small bump for context
+        
+        match_score = int(max(0, min(100, final_score)))
+        
+        # Normalization (Fix Compression - per user rule)
+        # If core_score >= 0.5 and final_score < 55: final_score += 15
+        if core_score_val >= 0.5 and match_score < 55:
+            match_score += 15
             
-        # Soft Skills Bonus (Extra 5%)
-        soft_bonus = min(5, len(matched_soft) * 1)
+        match_score = min(100, match_score)
         
-        raw_score = core_score + preferred_score + project_bonus + soft_bonus
-        
-        match_score = int(max(0, min(100, raw_score)))  # Clamp between 0-100
-        
-        # Normalization (Boost candidates with good core skills but low overall score)
-        if tech_coverage >= 0.5 and match_score < 60:
-             # If they have >50% of skills but score is low (due to poor text match), boost them
-             match_score += 15
-        
-        # Cap at 95 to allow room for "perfect" human judgement
-        match_score = min(95, match_score)
-        
-        # Load Recommendation Logic
-        self.rec_logic = {
-            "strong_match": { "min": 75 },
-            "good_match": { "min": 60 },
-            "partial_match": { "min": 45 },
-            "weak_match": { "max": 44 }
-        }
-        try:
-            rec_path = Path("tuning/recommendation_logic.json")
-            if rec_path.exists():
-                with open(rec_path, 'r') as f:
-                    self.rec_logic = json.load(f)
-        except:
-            pass
-            
-        # Determine fit level based on new logic
-        if match_score >= self.rec_logic['strong_match']['min']:
+        # Determine fit level
+        # strong >= 75, good 60-74, partial 45-59, weak < 45
+        if match_score >= 75:
             fit_level = "High"
-        elif match_score >= self.rec_logic['good_match']['min']:
+        elif match_score >= 60:
             fit_level = "Medium"
-        elif match_score >= self.rec_logic['partial_match']['min']:
+        elif match_score >= 45:
             fit_level = "Partial"
         else:
             fit_level = "Low"
         
+        # Identify Gaps
+        missing_core = [s for s in self.skill_buckets.get('core_ai', []) if s not in classified['core']]
+        missing_skills = missing_core + [s for s in self.skill_buckets.get('ml_projects', []) if s not in classified['project']]
+        
+        matched_all = classified['core'] + classified['project'] + classified['preferred'] + classified['other'] + matched_soft
+        
         # Generate personalized summary
-        summary = self._generate_summary(name, title, exp_years, education, matched_tech, missing_skills, fit_level)
+        summary = self._generate_summary(name, title, exp_years, education, matched_all, missing_skills, fit_level)
         
         # Generate recommendation
-        recommendation = self._generate_recommendation(fit_level, matched_tech, missing_skills, exp_years)
+        recommendation = self._generate_recommendation(fit_level, matched_all, missing_skills, exp_years)
         
-        logger.info(f"✅ Analyzed: {name} - {match_score}% match ({fit_level}) [Tech: {len(matched_tech)}, Soft: {len(matched_soft)}]")
+        logger.info(f"✅ Analyzed {name}: Score {match_score}% ({fit_level}) | Core: {len(classified['core'])}/{total_core} | Proj: {len(classified['project'])}")
         
         return {
             "candidate_name": name,
             "current_title": title,
             "match_score": match_score,
             "fit_level": fit_level,
-
-            "matched_skills": matched_skills, # Full list for UI tags
-            "matched_tech_skills": matched_tech,
+            "matched_skills": matched_all, # Full list for UI tags
+            "matched_tech_skills": classified['core'], # Just for debug/backend structure
             "matched_soft_skills": matched_soft,
             "missing_skills": missing_skills[:5],
             "summary": summary,
@@ -354,7 +368,7 @@ class ResumeAnalyzer:
         """Generate hiring recommendation."""
         
         # Check Intent
-        is_intern = self.intent.get('role_type') == 'internship'
+        is_intern = self.context.get('role_type') == 'internship'
         
         if fit_level == "High":
             if is_intern:

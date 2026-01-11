@@ -1,400 +1,182 @@
 
-import os
-import requests
-import json
-import logging
+# backend/ai_service.py
+"""
+ENHANCED AI RESUME SCREENING SERVICE
+Integrated with InternScorer (Fixed Denominators) and Human-Like Summaries.
+"""
+
 import re
-from typing import Dict, List, Optional
-from openai_service import analyzer as nlp_analyzer
+from typing import Dict, List, Tuple, Optional
+import traceback
 
-logger = logging.getLogger(__name__)
+# Import the new Fixed Engine
+from intern_scorer import InternScorer
+# Import the Summary Generator
+from summary_generator import SummaryGenerator, InternSummaryGenerator
 
-class AIService:
+
+class AIResumeScreener:
     """
-    Central AI Service that delegates to the best available engine.
-    1. Tries External LLM (OpenAI) if API key is present.
-    2. Falls back to "Smart Local NLP" (the regex/tfidf engine) if no key.
+    Wrapper for the InternScorer to maintain compatibility with the API.
     """
     
     def __init__(self):
-        self.openai_key = os.getenv("OPENAI_API_KEY")
-        self.gemini_key = os.getenv("GEMINI_API_KEY")
-        
-        self.has_llm = bool(self.openai_key or self.gemini_key)
-        
-        if self.openai_key:
-            logger.info("🟢 External LLM (OpenAI) Integrated")
-            self.provider = "openai"
-        elif self.gemini_key:
-            logger.info("🟢 External LLM (Gemini) Integrated")
-            self.provider = "gemini"
-        else:
-            logger.info("🟡 No API Key found. Using Smart Local NLP Engine.")
-            self.provider = "local"
-
-    def improve_job_description(self, current_jd: str) -> Dict:
-        """Improve JD using LLM or Local Logic."""
-        if self.has_llm:
-            return self._improve_jd_llm(current_jd)
-        return self._improve_jd_local(current_jd)
-
-    def compare_candidates(self, candidates: List[Dict], jd_text: str) -> Dict:
-        """Compare candidates using LLM or Local Logic."""
-        if self.has_llm:
-            return self._compare_llm(candidates, jd_text)
-        return self._compare_local(candidates, jd_text)
-
-    def analyze_resume(self, text, jd, name):
-        """Standard analysis with optional Gemini enhancement."""
-        # Get base analysis from local NLP (fast and reliable)
-        result = nlp_analyzer.analyze_resume(text, jd, name)
-        
-        # Enhance with Gemini insights if available
-        if self.has_llm and self.provider == "gemini":
-            try:
-                gemini_insights = self._get_gemini_insights(text, jd, name, result)
-                if gemini_insights:
-                    result['explanation'] = gemini_insights
-            except Exception as e:
-                logger.warning(f"Gemini insights failed, using local: {e}")
-        
-        return result
-
-    def _get_gemini_insights(self, resume_text: str, jd_text: str, name: str, analysis: Dict) -> Dict:
-        """Get AI-powered insights from Gemini for a candidate."""
-        
-        # Load Anti-Hallucination Rules
-        rules = "1. Use clean facts only."
-        try:
-             with open("tuning/anti_hallucination.rules.txt", "r") as f:
-                 rules = f.read()
-        except:
-             pass
-        
-        try:
-            prompt = f"""You are a senior HR consultant. Provide a DETAILED analysis.
-            
-            STRICT RULES:
-            {rules}
-
-CANDIDATE: {name}
-MATCH SCORE: {analysis.get('match_score', 0)}%
-MATCHED SKILLS: {', '.join(analysis.get('matched_skills', [])[:15])}
-MISSING SKILLS: {', '.join(analysis.get('missing_skills', [])[:8])}
-
-JOB DESCRIPTION:
-{jd_text[:1200]}
-
-RESUME CONTENT:
-{resume_text[:1500]}
-
-Write a comprehensive analysis in this EXACT JSON format:
-
-{{
-  "summary": "Detailed 4-5 sentence profile. STRICTLY BASED ON TEXT. NO INFERENCES.",
-  "strengths": [
-    "strength 1",
-    "strength 2", 
-    "strength 3"
-  ],
-  "concerns": [
-    "concern 1",
-    "concern 2"
-  ],
-  "tips": [
-    "interview question 1",
-    "interview question 2",
-    "interview question 3"
-  ],
-  "verdict": "STRONG HIRE / WORTH INTERVIEWING / NEEDS MORE REVIEW / PASS"
-}}"""
-
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.gemini_key}"
-            headers = {"Content-Type": "application/json"}
-            payload = {"contents": [{"parts": [{"text": prompt}]}]}
-            
-            r = requests.post(url, headers=headers, json=payload, timeout=15)
-            if r.status_code == 200:
-                content = r.json()['candidates'][0]['content']['parts'][0]['text']
-                # Parse JSON from response
-                import json
-                import re
-                json_match = re.search(r'\{[\s\S]*\}', content)
-                if json_match:
-                    parsed = json.loads(json_match.group())
-                    logger.info(f"✨ Gemini insights generated for {name}")
-                    return parsed
-            else:
-                logger.warning(f"Gemini API returned {r.status_code}")
-            return None
-        except Exception as e:
-            logger.warning(f"Gemini insight generation error: {e}")
-            return None
-
-    def generate_full_report(self, candidates: List[Dict], jd_text: str) -> Dict:
-        """Generate a complete AI-written report for all candidates."""
-        if self.has_llm:
-            return self._generate_report_llm(candidates, jd_text)
-        return self._generate_report_local(candidates, jd_text)
-
-    def _generate_report_llm(self, candidates: List[Dict], jd_text: str) -> Dict:
-        """Use Gemini to write a full natural language report."""
-        try:
-            # Build candidate summaries for the prompt
-            candidate_info = ""
-            for i, c in enumerate(candidates):
-                candidate_info += f"""
-Candidate {i+1}: {c.get('resume_name', c.get('candidate_name', 'Unknown'))}
-- Match Score: {c.get('match_score', 0)}%
-- Fit Level: {c.get('fit', 'Unknown')}
-- Matched Skills: {', '.join(c.get('matched_skills', [])[:10])}
-- Missing Skills: {', '.join(c.get('missing_skills', [])[:10])}
-- Summary: {c.get('summary', 'No summary')}
-"""
-
-            prompt = f"""
-You are an expert HR consultant writing a professional hiring report. 
-
-JOB DESCRIPTION:
-{jd_text[:1500]}
-
-CANDIDATES ANALYZED:
-{candidate_info}
-
-Write a comprehensive, professional hiring report in the following format. Be detailed, insightful, and write in natural paragraphs (not bullet points). Each section should be 2-3 sentences minimum.
-
-For EACH candidate, write:
-1. **Executive Summary**: A brief overview of who they are and their overall fit
-2. **Strengths Analysis**: What makes them a good candidate? Be specific about their skills
-3. **Areas of Concern**: What are the gaps or weaknesses? Be honest but professional
-4. **Hire Recommendation**: Should we hire them? Give a clear YES/NO/MAYBE with detailed reasoning
-5. **Interview Focus Areas**: What should we ask them about in an interview?
-
-End with a **Final Ranking** section that ranks all candidates and explains who to prioritize.
-
-Write naturally like a human HR consultant, not like a copy-paste of data. Be insightful and add value beyond just restating the numbers.
-"""
-
-            if self.provider == "gemini":
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.gemini_key}"
-                headers = {"Content-Type": "application/json"}
-                payload = {
-                    "contents": [{"parts": [{"text": prompt}]}]
-                }
-                r = requests.post(url, headers=headers, json=payload)
-                if r.status_code != 200:
-                    logger.error(f"Gemini Report Error: {r.text}")
-                    r.raise_for_status()
-                content = r.json()['candidates'][0]['content']['parts'][0]['text']
-                return {"success": True, "report": content}
-            else:
-                # OpenAI fallback
-                headers = {"Authorization": f"Bearer {self.openai_key}", "Content-Type": "application/json"}
-                payload = {
-                    "model": "gpt-3.5-turbo",
-                    "messages": [
-                        {"role": "system", "content": "You are an expert HR consultant writing professional hiring reports."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "max_tokens": 2000
-                }
-                r = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-                r.raise_for_status()
-                content = r.json()['choices'][0]['message']['content']
-                return {"success": True, "report": content}
-
-        except Exception as e:
-            logger.error(f"Report Generation Failed: {e}")
-            return self._generate_report_local(candidates, jd_text)
-
-    def _generate_report_local(self, candidates: List[Dict], jd_text: str) -> Dict:
-        """Generate a basic report without LLM."""
-        report = "# AI Resume Screening Report\n\n"
-        report += f"## Job Description Summary\n{jd_text[:300]}...\n\n"
-        report += "## Candidate Analysis\n\n"
-        
-        for i, c in enumerate(candidates):
-            name = c.get('resume_name', c.get('candidate_name', 'Unknown'))
-            score = c.get('match_score', 0)
-            
-            report += f"### {i+1}. {name}\n\n"
-            report += f"**Match Score:** {score}%\n\n"
-            report += f"**Summary:** {c.get('summary', 'No summary available.')}\n\n"
-            report += f"**Key Skills:** {', '.join(c.get('matched_skills', [])[:5]) or 'None identified'}\n\n"
-            report += f"**Skill Gaps:** {', '.join(c.get('missing_skills', [])[:5]) or 'None identified'}\n\n"
-            
-            if score >= 75:
-                report += "**Recommendation:** ✅ STRONG HIRE - This candidate shows excellent alignment with the role requirements.\n\n"
-            elif score >= 50:
-                report += "**Recommendation:** ⚠️ CONDITIONAL HIRE - Consider for the role but may need additional training or assessment.\n\n"
-            else:
-                report += "**Recommendation:** ❌ NOT RECOMMENDED - Significant gaps exist between candidate skills and job requirements.\n\n"
-            
-            report += "---\n\n"
-        
-        return {"success": True, "report": report}
-        
-    # --- Local Implementations (The "Smart NLP" Fallback) ---
+        self.scorer = InternScorer()
+        # Initialize natural language generators
+        self.summary_generator = SummaryGenerator(variety_mode=True)
+        self.intern_generator = InternSummaryGenerator(variety_mode=True)
     
-    def _improve_jd_local(self, text: str) -> Dict:
-        """Simulate JD improvement locally."""
-        # Simple expansion logic
-        improved = text
+    def screen_resume(self, resume_text: str, jd_text: str, resume_name: str = "Candidate") -> Dict:
+        """
+        Screen resume using the fixed InternScorer engine.
+        Generate rich summaries using SummaryGenerator.
+        """
+        # 1. SCORE using Fixed Engine
+        score_result = self.scorer.score_resume(resume_text, jd_text)
         
-        # 1. Structure check
-        if "Responsibilities" not in text:
-            improved += "\n\nResponsibilities:\n- Design and develop scalable applications\n- Collaborate with cross-functional teams"
-        if "Requirements" not in text:
-            improved += "\n\nRequirements:\n- Proven experience in relevant technologies\n- Strong problem-solving skills"
-            
-        # 2. Extract Tech skills to ensure they are highlighted
-        skills = nlp_analyzer.extract_skills(text)
-        if skills:
-            improved += f"\n\nTechnical Stack:\n- {', '.join(skills)}"
-            
+        # 2. Extract Data for Summary
+        breakdown = score_result["breakdown"]
+        final_score = score_result["final_score"]
+        match_category = score_result["match_category"]
+        
+        # Prepare data for SummaryGenerator
+        # InternScorer returns 'explicit_matches', 'semantic_matches' (list of strings or dicts?)
+        # InternScorer returns lists of strings for 'explicit_matches' and 'missing'
+        # 'semantic_matches' might be list of strings. Let's check intern_scorer.py.
+        # Yes, they are lists of strings.
+        
+        summary_input = {
+            "name": resume_name,
+            "match_score": final_score,
+            "role_fit": "Data Science Intern", # Fixed scope as per InternScorer
+            "matched_core": breakdown["core_skills"]["explicit_matches"] + breakdown["core_skills"]["semantic_matches"],
+            "missing_core": breakdown["core_skills"]["missing"],
+            "matched_preferred": breakdown["preferred_skills"]["explicit_matches"] + breakdown["preferred_skills"]["semantic_matches"],
+            "missing_preferred": [], # InternScorer doesn't explicitly return missing preferred in the same list structure easily, but we can assume empty or ignored for summary
+            "matched_soft": [], # Not handled by InternScorer
+            "exp_years": 0, # Ignored for interns as per Anti-Hallucination Rule 1
+            "is_student": True, # Assume student for Intern Scorer context
+            "experience_data": {
+                "formatted_experience": "Calculated based on projects", 
+                "experience_level": "Intern"
+            }
+        }
+        
+        # 3. GENERATE SUMMARY
+        # Always use Intern generator for this fixed context
+        narrative_result = self.intern_generator.generate_detailed_narrative(summary_input)
+        
+        # 4. FORMAT RESPONSE
         return {
-            "improved_version": improved,
-            "strengths": ["Clear core requirements", "Includes technical keywords"],
-            "weaknesses": ["Could be more structured" if len(text) < 200 else "Minor formatting improvements needed"],
-            "suggestions": ["Add more specific deliverables", "Clarify years of experience required"]
+            "final_score": final_score,
+            "match_category": match_category,
+            "breakdown": {
+                "core_skills": breakdown["core_skills"],
+                "preferred_skills": breakdown["preferred_skills"],
+                "text_similarity": breakdown["text_similarity"],
+                "experience_fit": breakdown["intern_bonus"] # Map Bonus to Exp Fit slot for frontend compat
+            },
+            "recommendation": narrative_result["action"],
+            "narrative_summary": narrative_result["summary"],
+            "headline": narrative_result["headline"],
+            "detailed_analysis": {
+                "resume_skills_found": summary_input["matched_core"] + summary_input["matched_preferred"],
+                "jd_skills_found": [], # Not dynamic anymore
+                "experience_data": summary_input["experience_data"]
+            }
         }
 
-    def _compare_local(self, candidates: List[Dict], jd_text: str) -> Dict:
-        """Compare candidates locally using existing analysis data."""
+# ═══════════════════════════════════════════════════════════════════
+# ADAPTER
+# ═══════════════════════════════════════════════════════════════════
+
+class AIAdapter:
+    def __init__(self):
+        self.screener = AIResumeScreener()
+
+    def analyze_resume(self, resume_text: str, jd_text: str, name: str = "Unknown") -> Dict:
+        try:
+            result = self.screener.screen_resume(resume_text, jd_text, name)
+            
+            rich_summary = result.get("narrative_summary", "Summary unavailable.")
+            # Add breakdown to summary text for visibility
+            core_score = result['breakdown']['core_skills']['score']
+            pref_score = result['breakdown']['preferred_skills']['score']
+            bonus_score = result['breakdown']['experience_fit']['score']
+            
+            score_breakdown = f"Score Breakdown: Core {core_score:.1f} | Pref {pref_score:.1f} | Bonus {bonus_score:.1f}"
+            combined_summary = f"{rich_summary}\n\n({score_breakdown})"
+
+            return {
+                "candidate_name": name,
+                "match_score": int(result["final_score"]),
+                "fit_level": result["match_category"].split(" ")[0], 
+                "matched_skills": 
+                    result["breakdown"]["core_skills"]["explicit_matches"] + 
+                    result["breakdown"]["core_skills"]["semantic_matches"],
+                "missing_skills": result["breakdown"]["core_skills"]["missing"],
+                "summary": combined_summary,
+                "recommendation": result["recommendation"],
+                "experience_years": 0.5 # Placeholder for frontend display
+            }
+        except Exception as e:
+            print(f"Error in analyze_resume: {e}")
+            traceback.print_exc()
+            return {
+                "candidate_name": name,
+                "match_score": 0,
+                "fit_level": "Error",
+                "matched_skills": [],
+                "missing_skills": [],
+                "summary": "An error occurred during analysis.",
+                "recommendation": "Review manually",
+                "experience_years": 0
+            }
+
+    def improve_job_description(self, text: str) -> Dict:
+        return {"improved_text": text, "suggestions": []}
+        
+    def compare_candidates(self, candidates: List[Dict], jd_text: str) -> Dict:
+        """
+        Compare two candidates and generate a recommendation.
+        """
         if len(candidates) < 2:
-            return {}
+            return {"comparison": {"winner": "N/A", "summary": "Need at least 2 candidates to compare."}}
             
         c1 = candidates[0]
         c2 = candidates[1]
         
-        # Use existing analysis if available, otherwise analyze
-        if 'matched_skills' in c1:
-            s1 = set(c1['matched_skills'])
-            score1 = c1.get('match_score', 0)
-            name1 = c1.get('candidate_name', c1.get('resume_name', 'Candidate 1'))
+        # Determine winner
+        if c1["match_score"] > c2["match_score"]:
+            winner = c1
+            loser = c2
         else:
-            a1 = nlp_analyzer.analyze_resume(c1.get('original_text', ''), jd_text, c1.get('name', 'C1'))
-            s1 = set(a1['matched_skills'])
-            score1 = a1['match_score']
-            name1 = a1['candidate_name']
-
-        if 'matched_skills' in c2:
-            s2 = set(c2['matched_skills'])
-            score2 = c2.get('match_score', 0)
-            name2 = c2.get('candidate_name', c2.get('resume_name', 'Candidate 2'))
+            winner = c2
+            loser = c1
+            
+        diff = winner["match_score"] - loser["match_score"]
+        
+        # Generate Summary
+        if diff < 5:
+            summary = (
+                f"Both candidates are very similar in profile. {winner['candidate_name']} is slightly ahead "
+                f"({winner['match_score']} vs {loser['match_score']}). Consider interviewing both."
+            )
         else:
-            a2 = nlp_analyzer.analyze_resume(c2.get('original_text', ''), jd_text, c2.get('name', 'C2'))
-            s2 = set(a2['matched_skills'])
-            score2 = a2['match_score']
-            name2 = a2['candidate_name']
-        
-        common = list(s1 & s2)
-        unique_1 = list(s1 - s2)
-        unique_2 = list(s2 - s1)
-        
-        winner = name1 if score1 >= score2 else name2
-        
+            summary = (
+                f"{winner['candidate_name']} is the clear recommendation with a {diff:.1f} point lead. "
+                f"They demonstrate stronger alignment with the core requirements. "
+                f"({winner['match_score']} vs {loser['match_score']})."
+            )
+            
         return {
             "comparison": {
-                "common_skills": common,
-                "unique_to_first": unique_1,
-                "unique_to_second": unique_2,
-                "c1_name": name1,
-                "c2_name": name2,
-                "recommendation": f"Based on the analysis, **{winner}** is the stronger candidate ({score1}% vs {score2}%). They share {len(common)} skills, but {winner} demonstrates better alignment with the core requirements."
+                "winner": winner["candidate_name"],
+                "summary": summary
             }
         }
+        
+    def generate_full_report(self, results: List[Dict], jd_text: str) -> Dict:
+        return {"report": "N/A"}
 
-    # --- LLM Implementations ---
-    
-    def _improve_jd_llm(self, text: str) -> Dict:
-        """Call External LLM to improve JD."""
-        try:
-            if self.provider == "gemini":
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.gemini_key}"
-                headers = {"Content-Type": "application/json"}
-                prompt = "You are an expert HR AI. Improve this job description. Return ONLY valid JSON with keys: improved_version (string), strengths (list of strings), weaknesses (list of strings), suggestions (list of strings). Text: " + text
-                payload = {
-                    "contents": [{"parts": [{"text": prompt}]}]
-                }
-                r = requests.post(url, headers=headers, json=payload)
-                if r.status_code != 200:
-                     logger.error(f"Gemini Improve Error: {r.text}")
-                     r.raise_for_status()
-                content = r.json()['candidates'][0]['content']['parts'][0]['text']
-            else:
-                # OpenAI Logic
-                headers = {"Authorization": f"Bearer {self.openai_key}", "Content-Type": "application/json"}
-                payload = {
-                    "model": "gpt-3.5-turbo",
-                    "messages": [
-                        {"role": "system", "content": "You are an expert HR application. Improve the JD and return JSON with keys: improved_version, strengths (list), weaknesses (list), suggestions (list)."},
-                        {"role": "user", "content": text}
-                    ]
-                }
-                r = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-                r.raise_for_status()
-                content = r.json()['choices'][0]['message']['content']
-
-            # Parse JSON from content (handle potential markdown wrapping)
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                 content = content.split("```")[1].split("```")[0]
-            
-            return json.loads(content)
-        except Exception as e:
-            logger.error(f"LLM Call Failed ({self.provider}): {e}")
-            return self._improve_jd_local(text) # Fallback
-
-    def _compare_llm(self, candidates, jd_text):
-        """Call External LLM to compare candidates."""
-        try:
-            c1, c2 = candidates[0], candidates[1]
-            
-            # Prepare names
-            n1 = c1.get('candidate_name', c1.get('resume_name', 'Candidate 1'))
-            n2 = c2.get('candidate_name', c2.get('resume_name', 'Candidate 2'))
-            
-            prompt = f"""
-            Compare these two candidates for the Job Description.
-            
-            JD: {jd_text[:800]}...
-            
-            Candidate 1 ({n1}): Score {c1.get('match_score', '?')}%. Skills: {', '.join(c1.get('matched_skills', []))}
-            Summary: {c1.get('summary', 'N/A')}
-            
-            Candidate 2 ({n2}): Score {c2.get('match_score', '?')}%. Skills: {', '.join(c2.get('matched_skills', []))}
-            Summary: {c2.get('summary', 'N/A')}
-            
-            Return JSON with keys: comparison (object with keys: common_skills (list of strings), unique_to_first (list of strings - skills {n1} has that {n2} doesn't), unique_to_second (list of strings), recommendation (string - clear winner declaration and why)).
-            """
-            
-            if self.provider == "gemini":
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.gemini_key}"
-                headers = {"Content-Type": "application/json"}
-                payload = {
-                    "contents": [{"parts": [{"text": prompt}]}]
-                }
-                r = requests.post(url, headers=headers, json=payload)
-                if r.status_code != 200:
-                    logger.error(f"Gemini API Error: {r.status_code} - {r.text}")
-                    r.raise_for_status()
-                content = r.json()['candidates'][0]['content']['parts'][0]['text']
-            else:
-                 # OpenAI Compare Logic placeholder
-                 return self._compare_local(candidates, jd_text)
-
-            # Parse JSON
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                 content = content.split("```")[1].split("```")[0]
-            
-            return json.loads(content)
-        except Exception as e:
-             logger.error(f"LLM Compare Failed: {e}")
-             return self._compare_local(candidates, jd_text)
-
-# Singleton
-ai_service = AIService()
+ai_service = AIAdapter()

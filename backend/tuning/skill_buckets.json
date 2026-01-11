@@ -1,0 +1,27 @@
+{
+  "core_ai": [
+    "python",
+    "machine learning",
+    "nlp",
+    "pandas",
+    "numpy",
+    "scikit-learn"
+  ],
+  "ml_projects": [
+    "classification",
+    "regression",
+    "model training",
+    "deep learning"
+  ],
+  "preferred": [
+    "sql",
+    "git",
+    "tensorflow",
+    "flask",
+    "fastapi"
+  ],
+  "optional": [
+    "rest",
+    "backend"
+  ]
+}

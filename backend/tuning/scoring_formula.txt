@@ -1,19 +1,10 @@
-SCORING FORMULA:
-
-Core Skills Weight: 70%
-Preferred Skills Weight: 20%
-Project / Learning Bonus: 10%
-
 core_score = matched_core / total_core
+project_score = matched_projects / total_projects
 preferred_score = matched_preferred / total_preferred
 
-raw_score = 
-(core_score * 70) + 
-(preferred_score * 20) + 
-project_bonus
+final_score = 
+(core_score * 60) + 
+(project_score * 25) + 
+(preferred_score * 15)
 
-project_bonus:
-+5 if ML project exists
-+5 if NLP project exists
-
-final_score = clamp(raw_score, 0, 100)
+Clamp score between 0 and 100
