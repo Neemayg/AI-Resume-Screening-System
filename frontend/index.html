@@ -1577,18 +1577,44 @@
         }
       };
 
-      const handleJdFileUpload = (fileList) => {
+      const handleJdFileUpload = async (fileList) => {
         const arr = Array.from(fileList);
-        arr.forEach(file => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            setJdFiles(prev => [...prev, { name: file.name, id: Date.now() + Math.random() }]);
-            if (file.name.endsWith('.txt')) {
+        for (const file of arr) {
+          // For txt files, read directly
+          if (file.name.toLowerCase().endsWith('.txt')) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              setJdFiles(prev => [...prev, { name: file.name, id: Date.now() + Math.random() }]);
               setJd(prev => prev + (prev ? '\n\n' : '') + e.target.result);
+            };
+            reader.readAsText(file);
+          } else {
+            // For PDF, DOCX, etc. - use backend to extract text
+            try {
+              const form = new FormData();
+              form.append("file", file);
+
+              const res = await fetch(`${API}/upload-jd-file`, {
+                method: "POST",
+                body: form
+              });
+
+              if (res.ok) {
+                const data = await res.json();
+                if (data.extracted_text) {
+                  setJdFiles(prev => [...prev, { name: file.name, id: Date.now() + Math.random() }]);
+                  setJd(prev => prev + (prev ? '\n\n' : '') + data.extracted_text);
+                }
+              } else {
+                const err = await res.json().catch(() => ({}));
+                alert(`Failed to extract text from ${file.name}: ${err.detail || 'Unknown error'}`);
+              }
+            } catch (e) {
+              console.error('JD file upload error:', e);
+              alert(`Failed to upload ${file.name}: ${e.message}`);
             }
-          };
-          reader.readAsText(file);
-        });
+          }
+        }
       };
 
       const removeJdFile = (id) => {
@@ -1601,22 +1627,37 @@
       };
 
       const analyze = async () => {
-        if (!jd || files.length === 0) return;
+        // Validate: need JD (either text in textarea OR uploaded files) and at least one resume
+        const hasJdText = jd && jd.trim().length >= 10;
+        const hasJdFiles = jdFiles.length > 0;
+
+        if (!hasJdText && !hasJdFiles) {
+          alert("Please provide a Job Description. You can either paste text or upload a PDF/Word file.");
+          return;
+        }
+        if (files.length === 0) {
+          alert("Please upload at least one resume to analyze.");
+          return;
+        }
 
         setLoading(true);
         setResults(null);
         setSelectedCandidates([]);
 
         try {
-          // 1. Upload JD Text
-          console.log("Step 1: Uploading JD Text...");
-          const jdRes = await fetch(`${API}/upload-jd-text`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: jd })
-          });
-
-          if (!jdRes.ok) throw new Error(`JD Upload failed: ${jdRes.status} ${jdRes.statusText}`);
+          // 1. Upload JD Text if we have text in the textarea
+          // (If JD was uploaded as file, the backend already has the text from /upload-jd-file)
+          if (hasJdText) {
+            console.log("Step 1: Uploading JD Text...");
+            const jdRes = await fetch(`${API}/upload-jd-text`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: jd })
+            });
+            if (!jdRes.ok) throw new Error(`JD Upload failed: ${jdRes.status} ${jdRes.statusText}`);
+          } else {
+            console.log("Step 1: JD already uploaded via file, skipping text upload...");
+          }
 
           // 2. Trigger Analysis
           console.log("Step 2: Triggering Analysis...");
@@ -2017,9 +2058,9 @@
                   </div>
                 </div>
 
-                {jd.length > 50 && (
+                {(jd.length > 50 || jdFiles.length > 0) && (
                   <div style={{ marginTop: '12px', color: 'var(--success)', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    ✓ JD ready ({jd.length} characters)
+                    ✓ JD ready {jd.length > 0 ? `(${jd.length} characters)` : `(${jdFiles.length} file${jdFiles.length > 1 ? 's' : ''} uploaded)`}
                   </div>
                 )}
               </div>
@@ -2249,28 +2290,29 @@
                           marginTop: '16px',
                           padding: '12px 16px',
                           borderRadius: '8px',
-                          background: r.match_score >= 75 ? 'var(--success-subtle)' : r.match_score >= 50 ? 'var(--warning-subtle)' : 'var(--danger-subtle)',
-                          border: `1px solid ${r.match_score >= 75 ? 'var(--success)' : r.match_score >= 50 ? 'var(--warning)' : 'var(--danger)'}`,
+                          background: r.match_score >= 75 ? 'var(--success-subtle)' : r.match_score >= 45 ? 'var(--warning-subtle)' : 'var(--danger-subtle)',
+                          border: `1px solid ${r.match_score >= 75 ? 'var(--success)' : r.match_score >= 45 ? 'var(--warning)' : 'var(--danger)'}`,
                           display: 'flex',
                           alignItems: 'center',
                           gap: '10px'
                         }}>
                           <span style={{ display: 'flex' }}>
-                            {r.match_score >= 75 ? <Icons.Check size={22} color="var(--success)" /> : r.match_score >= 50 ? <Icons.Warning size={22} color="var(--warning)" /> : <Icons.X size={22} color="var(--danger)" />}
+                            {r.match_score >= 75 ? <Icons.Check size={22} color="var(--success)" /> : r.match_score >= 45 ? <Icons.Warning size={22} color="var(--warning)" /> : <Icons.X size={22} color="var(--danger)" />}
                           </span>
                           <div>
                             <div style={{
                               fontWeight: 700,
                               fontSize: '14px',
-                              color: r.match_score >= 75 ? 'var(--success)' : r.match_score >= 50 ? 'var(--warning)' : 'var(--danger)'
+                              color: r.match_score >= 75 ? 'var(--success)' : r.match_score >= 45 ? 'var(--warning)' : 'var(--danger)'
                             }}>
                               {r.match_score >= 75 ? 'STRONG HIRE RECOMMENDATION' :
-                                r.match_score >= 50 ? 'CONDITIONAL HIRE' :
-                                  'NOT RECOMMENDED'}
+                                r.match_score >= 60 ? 'GOOD MATCH' :
+                                  r.match_score >= 45 ? 'POTENTIAL MATCH' :
+                                    'NOT RECOMMENDED'}
                             </div>
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                               {r.match_score >= 75 ? 'This candidate strongly matches the job requirements.' :
-                                r.match_score >= 50 ? 'Candidate shows potential but may require additional training.' :
+                                r.match_score >= 45 ? 'Candidate shows potential. Review skill gaps.' :
                                   'Significant skill gaps detected. Consider other candidates.'}
                             </div>
                           </div>

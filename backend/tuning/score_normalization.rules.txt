@@ -1,0 +1,7 @@
+NORMALIZATION RULES:
+
+If core_score >= 0.5 and final_score < 50:
+    final_score += 15
+
+If final_score > 95:
+    final_score = 95

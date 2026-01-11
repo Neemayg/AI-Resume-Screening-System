@@ -1,0 +1,14 @@
+{
+  "strong_match": {
+    "min": 75
+  },
+  "good_match": {
+    "min": 60
+  },
+  "partial_match": {
+    "min": 45
+  },
+  "weak_match": {
+    "max": 44
+  }
+}

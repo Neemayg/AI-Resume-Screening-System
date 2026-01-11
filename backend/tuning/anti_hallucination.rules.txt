@@ -1,0 +1,9 @@
+ANTI-HALLUCINATION RULES:
+
+1. Use ONLY facts explicitly present in the resume text.
+2. DO NOT infer years of experience.
+3. DO NOT infer degrees.
+4. DO NOT infer seniority.
+5. DO NOT fabricate skills or tools.
+6. If information is missing, mark it as "Not mentioned".
+7. Never assume professional experience for internships.

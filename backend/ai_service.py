@@ -62,8 +62,20 @@ class AIService:
 
     def _get_gemini_insights(self, resume_text: str, jd_text: str, name: str, analysis: Dict) -> Dict:
         """Get AI-powered insights from Gemini for a candidate."""
+        
+        # Load Anti-Hallucination Rules
+        rules = "1. Use clean facts only."
         try:
-            prompt = f"""You are a senior HR consultant with 20 years of experience. Provide a DETAILED and INSIGHTFUL analysis of this candidate.
+             with open("tuning/anti_hallucination.rules.txt", "r") as f:
+                 rules = f.read()
+        except:
+             pass
+        
+        try:
+            prompt = f"""You are a senior HR consultant. Provide a DETAILED analysis.
+            
+            STRICT RULES:
+            {rules}
 
 CANDIDATE: {name}
 MATCH SCORE: {analysis.get('match_score', 0)}%
@@ -76,28 +88,26 @@ JOB DESCRIPTION:
 RESUME CONTENT:
 {resume_text[:1500]}
 
-Write a comprehensive analysis in this EXACT JSON format. Be DETAILED and SPECIFIC - don't give generic responses:
+Write a comprehensive analysis in this EXACT JSON format:
 
 {{
-  "summary": "Write a detailed 4-5 sentence paragraph about this candidate. Start with their overall profile and experience level. Then discuss their key technical strengths and how they align with the role. Mention any notable projects or achievements. Finally, give your professional assessment of their potential fit. Make it read like a real HR consultant's evaluation - insightful, specific, and actionable.",
+  "summary": "Detailed 4-5 sentence profile. STRICTLY BASED ON TEXT. NO INFERENCES.",
   "strengths": [
-    "Detailed strength 1 - explain WHY this is valuable for the role (2 sentences)",
-    "Detailed strength 2 - connect their experience to job requirements (2 sentences)", 
-    "Detailed strength 3 - highlight a unique advantage they bring (2 sentences)"
+    "strength 1",
+    "strength 2", 
+    "strength 3"
   ],
   "concerns": [
-    "Specific concern or gap - explain the impact and how it could be addressed",
-    "Another area needing attention with context"
+    "concern 1",
+    "concern 2"
   ],
   "tips": [
-    "Specific interview question to ask them and why",
-    "What to probe deeper on during screening",
-    "Red flag to watch for OR green flag to confirm"
+    "interview question 1",
+    "interview question 2",
+    "interview question 3"
   ],
-  "verdict": "STRONG HIRE / WORTH INTERVIEWING / NEEDS MORE REVIEW / PASS - with a brief justification"
-}}
-
-IMPORTANT: Don't just restate the skills list. Provide genuine insight like a real HR expert would. Be specific to THIS candidate and THIS job."""
+  "verdict": "STRONG HIRE / WORTH INTERVIEWING / NEEDS MORE REVIEW / PASS"
+}}"""
 
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.gemini_key}"
             headers = {"Content-Type": "application/json"}

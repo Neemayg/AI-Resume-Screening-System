@@ -1,0 +1,27 @@
+{
+  "NLP": [
+    "tf-idf",
+    "cosine similarity",
+    "resume screening",
+    "text similarity",
+    "classification"
+  ],
+  "Machine Learning": [
+    "svm",
+    "regression",
+    "classification",
+    "model training",
+    "clustering"
+  ],
+  "EDA": [
+    "data analysis",
+    "data preprocessing",
+    "pandas",
+    "visualization"
+  ],
+  "Backend (Optional)": [
+    "flask",
+    "fastapi",
+    "rest api"
+  ]
+}

@@ -84,6 +84,30 @@ def upload_jd_text(jd: JobDescriptionText):
     logger.info("JD Text Uploaded")
     return {"success": True}
 
+@app.post("/upload-jd-file")
+def upload_jd_file(file: UploadFile = File(...)):
+    """Upload a JD file (PDF, DOCX, TXT) and extract text from it."""
+    file_id = str(uuid.uuid4())[:8]
+    file_path = JD_UPLOAD_DIR / f"{file_id}_{file.filename}"
+    
+    with open(file_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    # Extract text using the resume parser (works for any document)
+    text, success = resume_parser.extract_text(str(file_path))
+    
+    if success and text.strip():
+        # Append to existing JD text (allows combining file + text)
+        if app_state.jd_text:
+            app_state.jd_text = app_state.jd_text + "\n\n" + text
+        else:
+            app_state.jd_text = text
+        logger.info(f"JD file uploaded and extracted: {file.filename} ({len(text)} chars)")
+        return {"success": True, "extracted_text": text, "filename": file.filename}
+    else:
+        logger.error(f"Failed to extract text from JD file: {file.filename}")
+        raise HTTPException(status_code=400, detail=f"Failed to extract text from {file.filename}. Please try a different file format.")
+
 @app.post("/upload-resumes")
 def upload_resumes(files: List[UploadFile] = File(...)):
     uploaded = []
