@@ -1,17 +1,21 @@
 """
 Vercel Serverless Function Entry Point
-Wraps the FastAPI application for Vercel's Python runtime.
 """
 
 import sys
+import os
 from pathlib import Path
 
-# Add backend directory to Python path
-backend_path = Path(__file__).parent.parent / "backend"
+# Add backend directory to Python path BEFORE other imports
+backend_path = Path(__file__).resolve().parent.parent / "backend"
 sys.path.insert(0, str(backend_path))
+os.chdir(backend_path)
 
-# Import the FastAPI app from main.py
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv(backend_path / ".env")
+
+# Now import the FastAPI app
 from main import app
 
-# Vercel expects the app to be named 'app' or 'handler'
-# FastAPI apps are ASGI-compatible and work directly with Vercel
+# Vercel will use this 'app' object
