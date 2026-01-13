@@ -12,7 +12,6 @@ python-docx
 nltk
 scikit-learn
 numpy
-sentence-transformers
 
 # Utilities
 python-dotenv
@@ -20,3 +19,6 @@ aiofiles
 
 # CORS
 starlette
+
+# Gemini AI
+google-generativeai

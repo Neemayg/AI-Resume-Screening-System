@@ -1370,7 +1370,9 @@
 
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
-    const API = "http://127.0.0.1:8000";
+    const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? "http://127.0.0.1:8000"
+      : "/api";
 
     // Custom SVG Icons - Sleek & Professional
     const Icons = {
